@@ -19,6 +19,12 @@ var transporter = nodemailer.createTransport(ses({
 }));
 
 exports.handler = function (event, context) {
+    var response = {
+        'r':'something',
+        'success_action_status': '201'
+    };
+    
+    context.succeed(response);
     var stage = event.stage || 'dev';
     var result = '';
     if (event && event.registrations) {
@@ -44,7 +50,7 @@ exports.handler = function (event, context) {
             var totalCost = event.totalCost || null;
             var adultCount = event.adultCount || null;
             var juniorCount = event.juniorCount || null;
-            var needsRegisteringUserConfirmation = true;
+            
             for (var i = 0; i < event.registrations.length; i++)
             {
                 var _registration = db.child('registrations/' + event.registrations[i]);
@@ -54,15 +60,9 @@ exports.handler = function (event, context) {
                             if (registration.status === "Pending") {
                                 processRegistration(db, registration, totalCost, adultCount, juniorCount);
                             }
-                            if (registration.registeredUser === registration.registeringUser) {
-                                needsRegisteringUserConfirmation = false;
-                            }
                         }
                     });
                 }
-            }
-            if (needsRegisteringUserConfirmation) {
-
             }
         });
     }
@@ -71,7 +71,7 @@ exports.handler = function (event, context) {
 
     }
     
-    context.done(null, result);  // SUCCESS with message
+    context.done(null, result);
 };
 
 function processRegistration(db, registration, totalCost, adultCount, juniorCount) {
@@ -83,19 +83,29 @@ function processRegistration(db, registration, totalCost, adultCount, juniorCoun
                 var _confirmation = null;
                 if (event.confirmation)
                     _confirmation = db.child('confirmations/' + event.confirmation);
-                var _user = db.child('users/' + registration.registeredUser);
+                var _registeredUser = db.child('users/' + registration.registeredUser);
+                var _registeringUser = db.child('users/' + registration.registeringUser);
                 co(function*() {
                     var confirmation = null;
                     if (_confirmation)
                         confirmation = yield _confirmation.get();
-                    var user = yield _user.get();
-                    if (validateRegistration(db, user, registration)) {
+                    var registeredUser = yield _registeredUser.get();
+                    var registeringUser = yield _registeringUser.get();
+                    if (validateRegistration(db, registeredUser, registration)) {
                         var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                         updateRegistration(db, registration);
-                        var details = yield buildConfirmation(db, user, registration.registeredUser, event, registration, 'confirmation.html', totalCost, adultCount, juniorCount, primaryMemberConfirmation);
+                        var details = yield buildConfirmation(db, registeredUser, registration.registeredUser, event, registration, 'confirmation.html', totalCost, adultCount, juniorCount, primaryMemberConfirmation);
                         //send each person on the confirmation their conf
                         if (details) {
-                            sendConfirmation(db,user, registration.registeredUser, details);
+                            sendConfirmation(db, registeredUser, registration.registeredUser, details);
+                        }
+                        
+                        if (!primaryMemberConfirmation) { //now send one to the registering user also
+                            details = yield buildConfirmation(db, registeringUser, registration.registeringUser, event, registration, 'confirmation.html', totalCost, adultCount, juniorCount, true);
+                            //send each person on the confirmation their conf
+                            if (details) {
+                                sendConfirmation(db, registeringUser, registration.registeringUser, details);
+                            }
                         }
                     }
                 }).catch(onerror);

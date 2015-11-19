@@ -6,7 +6,8 @@
     <Name>register</Name>
     <RootNamespace>register</RootNamespace>
     <StartupFile>_testdriver.js</StartupFile>
-    <NodeExeArguments>--harmony</NodeExeArguments>
+    <NodeExeArguments>
+    </NodeExeArguments>
   </PropertyGroup>
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -37,6 +38,7 @@
     <Compile Include="app.js" />
     <Compile Include="co-s3.js" />
     <Compile Include="config.js" />
+    <Compile Include="register.js" />
     <Compile Include="_testdriver.js" />
   </ItemGroup>
   <ItemGroup>

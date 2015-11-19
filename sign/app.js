@@ -17,12 +17,15 @@ exports.handler = function (event, context) {
     var bucket = "themac.imagery";
     var secret = "Hn/MqHv7XxHcTv5p5MngKwzk1CwnbkFICN670rz7";
     var key = "AKIAJJWTOTVFHP2VKYVQ";
-    var endpoint = "https://s3-us-west-2.amazonaws.com/themac.imagery"
+    
     if (stage !== 'dev') {
         bucket = "themac.content.images";
         secret = "qk46uq70LwWjmkajun5e1fMcpF4OJnd0vryesoVB";
         key = "AKIAIO73W65TDFYUPSLQ";
     }
+    
+    var endpoint = "https://s3-us-west-2.amazonaws.com/" + bucket;
+
     var expires = new Date(Date.now() + 120000);
     
     var policy = {
