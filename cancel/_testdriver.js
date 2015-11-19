@@ -21,7 +21,7 @@ var event = JSON.parse(fs.readFileSync('_sampleEvent.json', 'utf8').trim());
 
 var context = {};
 context.done = function () {
-    console.log("Register Function Complete");
+    console.log("Lambda Function Complete");
 }
 
 app.handler(event, context);
