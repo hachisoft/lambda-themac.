@@ -5,7 +5,7 @@ VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "sign", "sign\sign.njsproj", "{93A99353-34B5-47FA-87C9-63D274E18909}"
 EndProject
-Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "register", "register\register.njsproj", "{5EB568AA-EC9C-4630-BF5A-1BD0CA06294C}"
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "confirm", "register\confirm.njsproj", "{5EB568AA-EC9C-4630-BF5A-1BD0CA06294C}"
 EndProject
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "cancel", "cancel\cancel.njsproj", "{F887DFE8-B8A3-4024-B106-7371A2367E00}"
 EndProject

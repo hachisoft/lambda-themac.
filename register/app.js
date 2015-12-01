@@ -2,7 +2,7 @@
 exports.handler = function (event, context) {
     console.log('started app.js');
 
-    var register = require('./register.js');
+    var register = require('./confirm.js');
     register.handler(event, context);
 
    /* var spawn = require("child_process").spawn;

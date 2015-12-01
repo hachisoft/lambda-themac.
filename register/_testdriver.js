@@ -20,8 +20,11 @@ var app = require('./app');
 var event = JSON.parse(fs.readFileSync('_sampleEvent.json', 'utf8').trim());
 
 var context = {};
-context.done = function () {
-    console.log("Register Function Complete");
+context.succeed = function (result) {
+    console.log("Confirm Function Complete");
+}
+context.fail = function (result) {
+    console.log("Confirm Function Failed");
 }
 
 app.handler(event, context);
