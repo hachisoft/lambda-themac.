@@ -2,8 +2,8 @@
 exports.handler = function (event, context) {
     console.log('started app.js');
 
-    var register = require('./confirm.js');
-    register.handler(event, context);
+    var confirm = require('./confirm.js');
+    confirm.handler(event, context);
 
    /* var spawn = require("child_process").spawn;
     var child = spawn('node', ["--harmony", "driver.js"], {

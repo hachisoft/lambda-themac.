@@ -1,8 +1,7 @@
 ﻿"use strict";
 
 var config = {
-"imageFolder" : "images",
-"userFolder": "profile",
+"templateBucket" : "themac.images",
 "fromAddress": "MAC <webmaster@themac.com>",
 "prodFirebaseUrl": 'https://sizzling-inferno-283.firebaseio.com/',
 "devFirebaseUrl": 'https://luminous-heat-7934.firebaseio.com/',
