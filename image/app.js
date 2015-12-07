@@ -37,7 +37,7 @@ exports.handler = function (event, context) {
     console.log("Reading options from event:\n", util.inspect(event, { depth: 5 }));
     
     var download = require('./get.js');
-    var dest = 'temp';
+    var dest = '/tmp/temp';
     
     download(event.url, dest, function (err) {
         if (err) {
@@ -46,17 +46,18 @@ exports.handler = function (event, context) {
         else {
             var imageType = '.png';
             var contentType = 'image/png';
-            var original = gm(dest);
+            var original = imageMagick(dest);
             original.size(function (err, size) {
                 
                 if (err)
                     return console.error(err);
-                
+                var square = false;
                 var sizes = null;
                 var identifier = null;
                 if (event.user) {
                     sizes = thumbSizes;
                     templateBucket = templateBucket + '/' + event.user;
+                    square = true;
                 }
                 else if (event.image) {
                     sizes = imageSizes;
@@ -67,7 +68,7 @@ exports.handler = function (event, context) {
                 //transform, and upload to a different S3 bucket.
                 async.each(sizes,
                     function (max_size, callback) {
-                    resize_photo(size, max_size, imageType, original, contentType, callback, stage,keys, templateBucket);
+                    resize_photo(size, max_size,square,imageType, original, contentType, callback, stage,keys, templateBucket);
                 },
                     function (err) {
                     if (err) {
@@ -84,6 +85,7 @@ exports.handler = function (event, context) {
                                     _user.get().then(function (user) {
                                         if (keys.length === 1) {
                                             user.thumbId = keys[0];
+                                            user.photoId = event.url;
                                             _user.set(user).then(function (r) {
                                                 context.done();
                                             });
@@ -101,6 +103,7 @@ exports.handler = function (event, context) {
                                             image.large = keys[2];
                                             image.larger = keys[3];
                                             image.largest = keys[4];
+                                            image.original = event.url;
                                             _image.set(image).then(function (r) {
                                                 context.done();
                                             });
@@ -120,7 +123,7 @@ exports.handler = function (event, context) {
 };
 
 //wrap up variables into an options object
-var resize_photo = function (size, max_size, imageType, original, contentType, done, stage, keys, bucket) {
+var resize_photo = function (size, max_size, square, imageType, original, contentType, done, stage, keys, bucket) {
     
     var key = null;
     var uniqueId = '_' + Math.random().toString(36).substr(2, 16);
@@ -143,12 +146,24 @@ var resize_photo = function (size, max_size, imageType, original, contentType, d
             
             
             // Infer the scaling factor to avoid stretching the image unnaturally.
-            var scalingFactor = Math.min(
-                max_size / size.width,
-                max_size / size.height
-            );
-            var width = scalingFactor * size.width;
-            var height = scalingFactor * size.height;
+            var width = max_size;
+            var height = max_size;
+            if (square) {
+                if (size.width>size.height) {
+                    original.shave((size.width - size.height) / 2, 0, 0);
+                }
+                else if (size.width < size.height) {
+                    original.shave(0,(size.height - size.width) / 2, 0);
+                }
+            }
+            else {
+                var scalingFactor = Math.min(
+                    max_size / size.width,
+                    max_size / size.height
+                );
+                width = scalingFactor * size.width;
+                height = scalingFactor * size.height;
+            }
             
             
             // Transform the image buffer in memory.
