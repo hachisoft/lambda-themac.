@@ -8,8 +8,8 @@ var gm = require('gm')
 var util = require('util');
 var config = require('./config.js');
 // constants
-var imageSizes = [80, 160, 320, 453, 720];
-var thumbSizes = [80];
+var imageSizes = [80, 160, 320, 453, 720, -1]; //-1 is the original
+var thumbSizes = [80, -1]; //-1 is the original
 
 // get reference to S3 client 
 var s3 = new AWS.S3();
@@ -83,9 +83,9 @@ exports.handler = function (event, context) {
                                 var _user = db.child('users/' + event.user);
                                 if (_user) {
                                     _user.get().then(function (user) {
-                                        if (keys.length === 1) {
+                                        if (keys.length === 2) {
                                             user.thumbId = keys[0];
-                                            user.photoId = event.url;
+                                            user.photoId = keys[1]; //original
                                             _user.set(user).then(function (r) {
                                                 context.done();
                                             });
@@ -97,13 +97,13 @@ exports.handler = function (event, context) {
                                 var _image = db.child('images/' + event.image);
                                 if (_image) {
                                     _image.get().then(function (image) {
-                                        if (keys.length > 4) {
+                                        if (keys.length > 5) {
                                             image.small = keys[0];
                                             image.medium = keys[1];
                                             image.large = keys[2];
                                             image.larger = keys[3];
                                             image.largest = keys[4];
-                                            image.original = event.url;
+                                            image.original = keys[5];
                                             _image.set(image).then(function (r) {
                                                 context.done();
                                             });
@@ -143,8 +143,6 @@ var resize_photo = function (size, max_size, square, imageType, original, conten
             });
         },
         function transform(next) {
-            
-            
             // Infer the scaling factor to avoid stretching the image unnaturally.
             var width = max_size;
             var height = max_size;
@@ -165,18 +163,27 @@ var resize_photo = function (size, max_size, square, imageType, original, conten
                 height = scalingFactor * size.height;
             }
             
-            
-            // Transform the image buffer in memory.
-            original.resize(width, height)
-                .toBuffer(imageType, function (err, buffer) {
-                
-                if (err) {
-                    next(err);
-                } else {
-                    next(null, buffer);
-                }
-            });
-
+            if (size>0) { //-1 is the original
+                // Transform the image buffer in memory.
+                original.resize(width, height)
+                    .toBuffer(imageType, function (err, buffer) {
+                    
+                    if (err) {
+                        next(err);
+                    } else {
+                        next(null, buffer);
+                    }
+                });
+            }
+            else {
+                original.toBuffer(imageType, function (err, buffer) {
+                    if (err) {
+                        next(err);
+                    } else {
+                        next(null, buffer);
+                    }
+                });
+            }
         },
         function upload(data, next) {
             // Stream the transformed image to a different S3 bucket.
