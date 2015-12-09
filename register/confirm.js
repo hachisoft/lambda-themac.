@@ -11,14 +11,14 @@ var S3 = require('./co-s3.js');
 var s3 = new S3();
 
 var nodemailer = require('nodemailer');
-var ses = require('nodemailer-ses-transport');
+var ses = require('nodemailer-ses-transport'); 
 
 
 var transporter = nodemailer.createTransport(ses({
     region: 'us-west-2'
 }));
 
-console.log('started register.js');
+console.log('started confirm.js');
 
 exports.handler = function (event, context) {
     var stage = event.stage || 'dev';
