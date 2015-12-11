@@ -1,4 +1,4 @@
-﻿//require('gnode');
+﻿require('gnode');
 exports.handler = function (event, context) {
     console.log('started notify:app.js');
 

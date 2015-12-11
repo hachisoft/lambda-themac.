@@ -71,7 +71,7 @@ exports.handler = function (event, context) {
                 else {
                     var templateBody = template.Body.toString();
                     if (event.type === 'interest') {
-                        processInterestNotification(db, event.id, result, fromAddress, event.title, event.description, event.sentBy, templateBody);
+                        processInterestNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
                     }
                     else if (event.type === 'event') {
                         processEventNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
@@ -79,6 +79,8 @@ exports.handler = function (event, context) {
                     else if (event.type === 'user') {
                         processUserNotification(db, event.id, result, fromAddress, event.title, event.description, event.sentBy, templateBody);
                     }
+
+                    context.done();
                 }
             });
         });
@@ -149,20 +151,40 @@ function processEventNotification(db, event_id, fromAddress, title, description,
 };
 
 function processInterestNotification(db, interest_id, fromAddress, title, description, sentBy, template) {
-    var p = "interests/" + interest_id;
+    
     return co(function*() {
-        var path = db.child(p);
-        var interest = yield path.get();
+        var interest = yield db.child("interests/" + interest_id).get();
         if (interest) {
-            var registrations = Object.keys(evt.registrations);
-            registrations.forEach(function (key) {
-                var reg = db.child("registrations/" + key);
-                reg.get().then(function (registration) {
-                    if (registration) {
-                        processUserNotification(db, registration.registeredUser, fromAddress, title, description, sentBy, template)
+            if (interest.children)
+            {
+                var childInterests = Object.keys(interest.children);
+                for (var ci=0;ci<childInterests.length;ci++) {
+                    var uiPath = db.child("userInterests/").orderByChild('interest').equalTo(childInterests[ci]);
+                    var _userInterests = yield uiPath.get();
+                    if (_userInterests) {
+                        var userInterests = Object.keys(_userInterests);
+                        userInterests.forEach(function (key) {
+                            var userInterest = _userInterests[key];
+                            if (userInterest) {
+                                processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
+                            }
+                        });
+                    }
+                }
+            }
+            
+            //and now the interest
+            var iPath = db.child("userInterests/").orderByChild('interest').equalTo(interest_id);
+            var _userInterests = yield iPath.get();
+            if (_userInterests) {
+                var userInterests = Object.keys(_userInterests);
+                userInterests.forEach(function (key) {
+                    var userInterest = _userInterests[key];
+                    if (userInterest) {
+                        processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
                     }
                 });
-            });
+            }
         }
     }).catch(onerror);
 };
