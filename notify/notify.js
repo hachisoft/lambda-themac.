@@ -80,7 +80,7 @@ exports.handler = function (event, context) {
                         processUserNotification(db, event.id, result, fromAddress, event.title, event.description, event.sentBy, templateBody);
                     }
 
-                    context.done();
+                    context.succeed({});
                 }
             });
         });

@@ -6,8 +6,7 @@
     <Name>confirm</Name>
     <RootNamespace>register</RootNamespace>
     <StartupFile>_testdriver.js</StartupFile>
-    <NodeExeArguments>
-    </NodeExeArguments>
+    <NodeExeArguments>--harmony</NodeExeArguments>
   </PropertyGroup>
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>

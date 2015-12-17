@@ -3,7 +3,8 @@
 var config = {
 "imageFolder" : "images",
 "userFolder": "profile",
-"fromAddress": "MAC <webmaster@themac.com>",
+"prodFromAddress": "MAC <webmaster@themac.com>",
+"fromAddress": "contact@hachisoft.com",
 "prodFirebaseUrl": 'https://sizzling-inferno-283.firebaseio.com/',
 "devFirebaseUrl": 'https://luminous-heat-7934.firebaseio.com/',
 "devSecret": 'yIrmmj2CttjtCOGoPJZKRLVV24rkKaZeo4sm1gUh',
