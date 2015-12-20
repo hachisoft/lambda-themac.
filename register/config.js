@@ -1,8 +1,7 @@
 ﻿"use strict";
 
 var config = {
-"imageFolder" : "images",
-"userFolder": "profile",
+"templateBucket" : "themac.email.templates",
 "prodFromAddress": "MAC <webmaster@themac.com>",
 "fromAddress": "contact@hachisoft.com",
 "prodFirebaseUrl": 'https://sizzling-inferno-283.firebaseio.com/',
