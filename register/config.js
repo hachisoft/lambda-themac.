@@ -7,6 +7,7 @@ var config = {
 "prodFirebaseUrl": 'https://sizzling-inferno-283.firebaseio.com/',
 "devFirebaseUrl": 'https://luminous-heat-7934.firebaseio.com/',
 "devSecret": 'yIrmmj2CttjtCOGoPJZKRLVV24rkKaZeo4sm1gUh',
-"prodSecret": 'QE9kZaptDGsWBIBH1bQG87SJaOGQQFDsh5EWOwPF'
+"prodSecret": 'QE9kZaptDGsWBIBH1bQG87SJaOGQQFDsh5EWOwPF',
+"verbose":true
 }
 module.exports = config

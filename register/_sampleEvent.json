@@ -1,6 +1,8 @@
 ﻿{
-    "reservation": "-K5zdVs_B4nqhwQXoNNi",
-    "reservationUser": "-K5lOW-y31cg6bQIFgpu",
-    "reservingUser": "-K5lOW-y31cg6bQIFgpu",
-    "verb": "Cancel"
+    "registeringUser": "-K5lOW-y31cg6bQIFgpu",
+    "registrations": [
+        "-K6-o0vM0WsSI5TbQ2A-"
+    ],
+    "adultCount": 1,
+    "verb": "Register"
 }
