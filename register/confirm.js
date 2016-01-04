@@ -27,7 +27,8 @@ exports.handler = function (event, context) {
     var result = '';
     if (event && (event.registrations || event.reservation)) {
         if (config.verbose) {
-            console.log('event = ' + JSON.stringify(event));
+            console.log(event);
+            console.log(context);
         }
         
         var firebaseUrl = null;
@@ -59,8 +60,9 @@ exports.handler = function (event, context) {
             }
             if (event.reservation) {
                 var _reservation = db.child('reservations/' + event.reservation);
-                _reservation.get().then(function (reservation) {
-                    co(function*() {
+                co(function*() {
+                    var reservation = yield _reservation.get();
+                    
                         if (event.verb === 'Reserve') {
                             yield processReservation(event.verb, db, context, _reservation, reservation, event.reservation, fromAddress, templateBucket);
                         }
@@ -68,8 +70,8 @@ exports.handler = function (event, context) {
                             yield processReservationCancel(event.verb, db, context, _reservation, reservation, event.reservation, fromAddress, templateBucket);
                         }
                         context.succeed({});
-                    }).catch(onerror);
-                });
+                    
+                }).catch(onerror);
             }
             else {
                 var totalCost = event.totalCost || null;
@@ -220,7 +222,10 @@ function processReservationCancel(verb, db, context, _reservation, reservation, 
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
-    if (config.verbose) { console.log("processReservationCancel"); }
+    if (config.verbose) {
+        console.log("processReservationCancel");
+        console.log(reservation);
+    }
     return co(function*() {
         var _session = db.child('sessions/' + reservation.session);
         var _reservationUser = db.child('users/' + reservation.reservationUser);
@@ -277,15 +282,54 @@ function processReservationCancel(verb, db, context, _reservation, reservation, 
 
 function updateReservation(verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest) {
     return co(function*() {
-        if (config.verbose) { console.log("updateReservation verb:"+verb); }
-        if (reservation && session && location && reservationUser && reservingUser && interest) {
-            if (verb === 'Cancel') {
-                delete reservationUser.reservations[reservation_id];
-                delete reservingUser.createdReservations[reservation_id];
-                delete location.reservations[reservation_id];
-                delete location.sessions[reservation.session];
-                delete interest.reservations[reservation_id];
+        if (config.verbose) {
+            console.log("updateReservation verb:" + verb);
+        }
+        if (verb === 'Cancel') {
+            var promises = [];
                 
+            if (reservationUser) {
+                if (config.verbose) {
+                    console.log('reservationUser');
+                }
+                delete reservationUser.reservations[reservation_id];
+                promises.push(_reservationUser.set(reservationUser));
+
+            }
+                
+            if (reservingUser) {
+                if (config.verbose) {
+                    console.log('reservingUser');
+                }
+                delete reservingUser.createdReservations[reservation_id];
+                promises.push(_reservingUser.set(reservingUser));
+            }
+                
+            if (location) {
+                if (config.verbose) {
+                    console.log('location');
+                }
+                if (location.reservations) {
+                    delete location.reservations[reservation_id];
+                }
+                if (location.sessions && reservation.session) {
+                    delete location.sessions[reservation.session];
+                }
+                promises.push(_location.set(location));  
+            }
+                
+            if (interest) {
+                if (config.verbose) {
+                    console.log('interest');
+                }
+                delete interest.reservations[reservation_id];
+                promises.push(_interest.set(interest));
+            }
+                
+            if (location && session && reservingUser && reservationUser) {
+                if (config.verbose) {
+                    console.log('cancelledReservations');
+                }
                 var _cancelledReservations = db.child('cancelledReservations/');
                 var cancelledReservation = {
                     reservingMember: reservingUser.memberNumber,
@@ -293,12 +337,26 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
                     sessionDate: session.date,
                     location: location.name
                 };
+                promises.push(_cancelledReservations.push(cancelledReservation));
+            }
                 
-                yield [_reservationUser.set(reservationUser), _reservingUser.set(reservingUser), _location.set(location), _interest.set(interest), _session.remove(), _reservation.remove(), _cancelledReservations.push(cancelledReservation)];
+            if (_session) {
+                if (config.verbose) {
+                    console.log('_session');
+                }
+                promises.push(_session.remove());
             }
-            else if (verb === 'Reserve') {
-                yield _reservation.set(reservation);
+                
+            if (_reservation) {
+                if (config.verbose) {
+                    console.log('_reservation');
+                }
+                promises.push(_reservation.remove());
             }
+            yield promises;
+        }
+        else if (verb === 'Reserve') {
+            yield _reservation.set(reservation);
         }
     }).catch(onerror);
 };
@@ -599,7 +657,17 @@ function sendEmail(fromAddress, to, subject, content,message) {
             message: message
         }, function (error, info) {
             if (error) {
+                if (config.verbose) {
+                    console.log('sendEmail error');
+                    console.log(error);
+                }
+                if (info) {
+                    console.log(info);
+                }
                 reject();
+            }
+            if (config.verbose) {
+                console.log('email sent');
             }
             resolve();
         });
