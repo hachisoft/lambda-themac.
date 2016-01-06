@@ -139,6 +139,15 @@ exports.handler = function (event, context) {
                             }
                         }
                         
+                        if (reservation.interest) {
+                            var _interest = db.child('interests/' + reservation.interest);
+                            var interest = yield _interest.get();
+                            if (interest && interest.reservations) {
+                                delete interest.reservations[reservation_id];
+                                yield _interest.set(interest);
+                            }
+                        }
+                        
                         if (reservation.reservingUser) {
                             var _reservingUser = db.child('users/' + reservation.reservingUser);
                             var reservingUser = yield _reservingUser.get();
