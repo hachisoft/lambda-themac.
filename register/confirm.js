@@ -1,4 +1,5 @@
-﻿var aws = require('aws-sdk');
+﻿var Promis = require('es6-promise').Promise;
+var aws = require('aws-sdk');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
 var co = require('co');
@@ -49,6 +50,7 @@ exports.handler = function (event, context) {
         
         if (config.verbose) {
             console.log(config);
+            console.log('stage:' + stage);
         }
         
         NodeFire.setCacheSize(10);
@@ -84,7 +86,7 @@ exports.handler = function (event, context) {
                 for (var i = 0; i < event.registrations.length; i++) {
                     var _registration = db.child('registrations/' + event.registrations[i]);
                     if (_registration) {
-                        _registrations.push(_registration);
+                        _registrations.push(event.registrations[i]);
                         promises.push(_registration.get());
                     }
                 }
@@ -92,14 +94,16 @@ exports.handler = function (event, context) {
                     var registrations = yield promises;
                     for (var k = 0; k < registrations.length; k++) {
                         var registration = registrations[k];
+                        var registration_id = _registrations[k];
+                        var _registration = db.child('registrations/' + registration_id);
                         if (registration) {
                             if (event.verb === "Register" && registration.status === "Pending") {
                                 noneMatched = false;
                                 yield processRegistration(event.verb, db, context, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
                             }
-                            else if (event.verb === "Cancel" && registration.status === "Reserved") {
+                            else if (event.verb === "Cancel") {
                                 noneMatched = false;
-                                yield processCancellation(event.verb,db, context, _registration, registration, fromAddress, templateBucket);
+                                yield processRegistrationCancellation(event.verb,db, context,registration_id, _registration, registration, fromAddress, templateBucket);
                             }
                             else if (event.verb === "Modify" && registration.status === "Reserved") {
                                 noneMatched = false;
@@ -362,28 +366,29 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
     }).catch(onerror);
 };
 
-function processCancellation(verb, db, context, _registration, registration, fromAddress, templateBucket) {
+function processRegistrationCancellation(verb, db, context, registration_id, _registration, registration, fromAddress, templateBucket) {
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
-    if (config.verbose) { console.log("processCancellation"); }
+    if (config.verbose) { console.log("processRegistrationCancellation"); }
     var _event = db.child('events/' + registration.event);
     if (_event) {
         return _event.get().then(function (event) {
-            console.log(event);
             if (event) {
                 var _confirmation = null;
                 if (event.confirmation)
                     _confirmation = db.child('confirmations/' + event.confirmation);
                 var _registeredUser = db.child('users/' + registration.registeredUser);
                 var _registeringUser = db.child('users/' + registration.registeringUser);
+                var _fee = db.child('fees/' + registration.fee);
                 return co(function*() {
                     var confirmation = null;
                     if (_confirmation)
                         confirmation = yield _confirmation.get();
                     var registeredUser = yield _registeredUser.get();
                     var registeringUser = yield _registeringUser.get();
-                    if (validateCancellation(db, registeredUser, registration, event)) {
+                    var fee = yield _fee.get();
+                    if (validateCancellation(db, registeredUser, registration, event, fee)) {
                         registration.status = "Cancelled";
                         if (!event.noRegistrationRequired) {
                             event.available = event.available + 1;
@@ -435,12 +440,14 @@ function processRegistration(verb, db, context, _registration, registration, tot
                     _confirmation = db.child('confirmations/' + event.confirmation);
                 var _registeredUser = db.child('users/' + registration.registeredUser);
                 var _registeringUser = db.child('users/' + registration.registeringUser);
+                var _fee = db.child('fees/' + registration.fee);
                 return co(function*() {
                     var confirmation = null;
                     if (_confirmation)
                         confirmation = yield _confirmation.get();
                     var registeredUser = yield _registeredUser.get();
                     var registeringUser = yield _registeringUser.get();
+                    var fee = yield _fee.get();
                     if (validateRegistration(db, registeredUser, registeringUser, registration, event)) {
                         registration.status = "Reserved";
                         registration.dateRegistered = moment().valueOf();
@@ -489,7 +496,7 @@ function onerror(err) {
     console.error(err.stack);
 }
 
-function validateCancellation(db, user, registration, event) {
+function validateCancellation(db, user, registration, event, fee) {
     if (!event)
         return false;
     if (!registration)
@@ -643,36 +650,39 @@ function validateRegistration(db, user, registeringUser, registration, event) {
 };
 
 function updateRegistration(verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
+    if (config.verbose) {
+        console.log('updateRegistration:'+verb);
+    }
     return co(function*() {
         if (verb === 'Cancel') {
             if (registration) {
-                
+                var promises = [];
                 var locationName = null;
                 var interestName = null;
                 //this will delete the registration from associated models and add a new item to cancelledRegistrations
                 if (registration.registeringUser) {
                     if (registeringUser && registeringUser.createdRegistrations) {
                         delete registeringUser.createdRegistrations[registration_id];
-                        yield _registeringUser.set(registeringUser);
+                        promises.push(_registeringUser.set(registeringUser));
                     }
                 }
                 if (registration.registeredUser) {
                     if (registeredUser && registeredUser.registrations) {
                         delete registeredUser.registrations[registration_id];
-                        yield _registeredUser.set(registeredUser);
+                        promises.push(_registeredUser.set(registeredUser));
                     }
                 }
                 if (registration.fee) {
                     if (fee && fee.registrations) {
                         delete fee.registrations[registration_id];
-                        yield _fee.set(fee);
+                        promises.push(_fee.set(fee));
                     }
                 }
                 if (registration.event) {
                     if (event){
                         if (event.registrations) {
                             delete event.registrations[registration_id];
-                            yield _event.set(event);
+                            promises.push(_event.set(event));
                         }
                         if (event.interest) {
                             var _interest = db.child('interests/' + event.interest);
@@ -692,11 +702,11 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
                     }
                 }
                 
-                yield _registration.remove();
+                promises.push(_registration.remove());
 
-                if (registeredUser && registeringUser && fee && event) {
+                if (registeredUser && registeringUser && event) {
                     if (config.verbose) {
-                        console.log('cancelledRegistrations');
+                        console.log('added cancelledRegistrations');
                     }
                     var _cancelledRegistrations = db.child('cancelledRegistrations/');
                     var cancelledRegistration = {
@@ -710,6 +720,8 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
                     };
                     promises.push(_cancelledRegistrations.push(cancelledRegistration));
                 }
+
+                yield promises;
             }
         }
         else if (verb === 'Register' || verb === 'Waitlist') {

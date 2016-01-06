@@ -15,7 +15,7 @@ function onerror(err) {
 }
 
 exports.handler = function (event, context) {
-    var stage = event.stage || 'prod';
+    var stage = event.stage || 'dev';
     var result = '';
     if (event) {
         // Read options from the event.
