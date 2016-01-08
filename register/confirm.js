@@ -27,6 +27,8 @@ if (config.verbose) {
     console.log('started confirm.js');
 }
 
+var fromAddress = null;
+
 exports.handler = function (event, context) {
     var stage = event.stage || 'dev';
     var result = '';
@@ -38,7 +40,7 @@ exports.handler = function (event, context) {
         
         var firebaseUrl = null;
         var authToken = null;
-        var fromAddress = null;
+        
         var templateBucket = config.templateBucket;
         if (stage !== 'dev') {
             authToken = config.prodSecret;
@@ -914,7 +916,12 @@ function buildConfirmation(verb, db, user, user_id, event, registration, reserva
         
         var cal = null;
         if (verb === 'Register') {
-            cal=ical();
+            cal = ical();
+            cal.prodId({
+                company: 'MAC',
+                product: 'ics',
+                language: 'EN' 
+            });
         }
         if (cal) {
             cal.setDomain('http://www.themac.com');
@@ -952,14 +959,24 @@ function buildConfirmation(verb, db, user, user_id, event, registration, reserva
                             }
                         }
                         if (cal) {
-                            cal.addEvent({
+                            var ce=cal.createEvent({
                                 start: moment(session.date).toDate(),
                                 end: moment(session.date + (session.duration * 60000)).toDate(),
                                 summary: eventName,
-                                uid: propertyName,
                                 description: eventDescription,
-                                location: sessionLocationName
+                                location: sessionLocationName,
+                                method: 'publish'
                             });
+                            if (ce) {
+                                ce.createAttendee({
+                                    email: user.email,
+                                    name: user.name
+                                });
+                                ce.organizer({
+                                    name: 'The MAC',
+                                    email: fromAddress
+                                });
+                            }
                         }
                         sessions.push({
                             date: formatTime(session.date,'MMM Do'),
