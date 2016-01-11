@@ -15,7 +15,7 @@ function onerror(err) {
 }
 
 exports.handler = function (event, context) {
-    var stage = event.stage || 'dev';
+    var stage = event.stage || 'v0';
     var result = '';
     if (event) {
         // Read options from the event.
@@ -24,14 +24,21 @@ exports.handler = function (event, context) {
         var fromAddress = null;
         var firebaseUrl = null;
         var authToken = null;
-        var templateBucket = config.templateBucket;
-        if (stage !== 'dev') {
+        var templateBucket = '';
+        if (stage === 'v0') {
+            templateBucket = config.prodTemplateBucket;
             authToken = config.prodSecret;
             firebaseUrl = config.prodFirebaseUrl;
             fromAddress = config.prodFromAddress;
         }
+        else if (stage === 'v0_2') {
+            templateBucket = config.prod2TemplateBucket;
+            authToken = config.prod2Secret;
+            firebaseUrl = config.prod2FirebaseUrl;
+            fromAddress = config.prodFromAddress;
+        }
         else {
-            config.templateBucket = 'dev.' + templateBucket;
+            templateBucket = config.devTemplateBucket;
             authToken = config.devSecret;
             firebaseUrl = config.devFirebaseUrl;
             fromAddress = config.fromAddress;

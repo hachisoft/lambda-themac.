@@ -1,7 +1,7 @@
 ﻿var crypto = require('crypto');
+var config = require('./config.js');
 
-console.log('Loading');
-
+console.log('Loading Sign');
 
 exports.handler = function (event, context) {
     var stage = event.stage || 'dev';
@@ -14,13 +14,30 @@ exports.handler = function (event, context) {
     }
 
     var acl = "public-read";
-    var bucket = "themac.imagery";
-    var secret = "Hn/MqHv7XxHcTv5p5MngKwzk1CwnbkFICN670rz7";
-    var key = "AKIAJJWTOTVFHP2VKYVQ";
+    var bucket = '';
+    var secret = '';
+    var key = '';
     
-    if (stage !== 'dev') {
-        bucket = "themac.content.images";
-        secret = "qk46uq70LwWjmkajun5e1fMcpF4OJnd0vryesoVB";
+    var templateBucket = '';
+    if (stage === 'v0') {
+        bucket = config.prodContentBucket;
+        secret = config.prodS3Secret;
+        firebaseUrl = config.prodFirebaseUrl;
+        fromAddress = config.prodFromAddress;
+        key = "AKIAJJWTOTVFHP2VKYVQ";
+    }
+    else if (stage === 'v0_2') {
+        bucket = config.prod2ContentBucket;
+        secret = config.prod2S3Secret;
+        firebaseUrl = config.prod2FirebaseUrl;
+        fromAddress = config.prodFromAddress;
+        key = "AKIAIO73W65TDFYUPSLQ";
+    }
+    else {
+        bucket = config.devContentBucket;
+        secret = config.devS3Secret;
+        firebaseUrl = config.devFirebaseUrl;
+        fromAddress = config.fromAddress;
         key = "AKIAIO73W65TDFYUPSLQ";
     }
     

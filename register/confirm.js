@@ -41,14 +41,21 @@ exports.handler = function (event, context) {
         var firebaseUrl = null;
         var authToken = null;
         
-        var templateBucket = config.templateBucket;
-        if (stage !== 'dev') {
+        var templateBucket = '';
+        if (stage === 'v0') {
+            templateBucket = config.prodTemplateBucket;
             authToken = config.prodSecret;
             firebaseUrl = config.prodFirebaseUrl;
             fromAddress = config.prodFromAddress;
         }
+        else if (stage === 'v0_2') {
+            templateBucket = config.prod2TemplateBucket;
+            authToken = config.prod2Secret;
+            firebaseUrl = config.prod2FirebaseUrl;
+            fromAddress = config.prodFromAddress;
+        }
         else {
-            templateBucket = 'dev.' + templateBucket;
+            templateBucket = config.devTemplateBucket;
             authToken = config.devSecret;
             firebaseUrl = config.devFirebaseUrl;
             fromAddress = config.fromAddress;

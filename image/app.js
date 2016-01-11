@@ -20,15 +20,28 @@ exports.handler = function (event, context) {
     
     var firebaseUrl = null;
     var authToken = null;
-    var templateBucket = config.templateBucket;
-    if (stage !== 'dev') {
+    var profileTemplateBucket = '';
+    var contentTemplateBucket = '';
+    if (stage === 'v0') {
+        contentTemplateBucket = config.devContentBucket;
+        profileTemplateBucket = config.devProfileBucket;
         authToken = config.prodSecret;
         firebaseUrl = config.prodFirebaseUrl;
+        fromAddress = config.prodFromAddress;
+    }
+    else if (stage === 'v0_2') {
+        contentTemplateBucket = config.prod2ContentBucket;
+        profileTemplateBucket = config.prod2ProfileBucket;
+        authToken = config.prod2Secret;
+        firebaseUrl = config.prod2FirebaseUrl;
+        fromAddress = config.prodFromAddress;
     }
     else {
-        templateBucket = 'dev.' + templateBucket;
+        contentTemplateBucket = config.prodContentBucket;
+        profileTemplateBucket = config.prodProfileBucket;
         authToken = config.devSecret;
         firebaseUrl = config.devFirebaseUrl;
+        fromAddress = config.fromAddress;
     }
     
     console.log(config);
@@ -49,6 +62,7 @@ exports.handler = function (event, context) {
             var original = imageMagick(dest);
             original.size(function (err, size) {
                 
+                var templateBucket = '';                
                 if (err)
                     return console.error(err);
                 var square = false;
@@ -56,12 +70,12 @@ exports.handler = function (event, context) {
                 var identifier = null;
                 if (event.user) {
                     sizes = thumbSizes;
-                    templateBucket = templateBucket + '/' + event.user;
+                    templateBucket = profileTemplateBucket + '/' + event.user;
                     square = true;
                 }
                 else if (event.image) {
                     sizes = imageSizes;
-                    templateBucket = templateBucket+'/'+event.image;
+                    templateBucket = contentTemplateBucket+'/'+event.image;
                 }
                 
                 var keys = [];
