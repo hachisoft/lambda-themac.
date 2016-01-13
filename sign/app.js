@@ -5,14 +5,17 @@ console.log('Loading Sign');
 
 exports.handler = function (event, context) {
     var stage = event.stage || 'dev';
-    if (event != null) {
-        console.log('event = ' + JSON.stringify(event));
+    
+    if (config.verbose) {
+        console.log(config);
+        console.log('stage:' + stage);
+        if (event != null) {
+            console.log('event = ' + JSON.stringify(event));
+        }
+        else {
+            console.log('No event object');
+        }
     }
-    else {
-        console.log('No event object');
-
-    }
-
     var acl = "public-read";
     var bucket = '';
     var secret = '';
@@ -24,7 +27,7 @@ exports.handler = function (event, context) {
         secret = config.prodS3Secret;
         firebaseUrl = config.prodFirebaseUrl;
         fromAddress = config.prodFromAddress;
-        key = "AKIAJJWTOTVFHP2VKYVQ";
+        key = "AKIAIO73W65TDFYUPSLQ";
     }
     else if (stage === 'v0_2') {
         bucket = config.prod2ContentBucket;
@@ -38,7 +41,7 @@ exports.handler = function (event, context) {
         secret = config.devS3Secret;
         firebaseUrl = config.devFirebaseUrl;
         fromAddress = config.fromAddress;
-        key = "AKIAIO73W65TDFYUPSLQ";
+        key = "AKIAJJWTOTVFHP2VKYVQ"; 
     }
     
     var endpoint = "https://s3-us-west-2.amazonaws.com/" + bucket;
