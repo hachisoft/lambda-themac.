@@ -322,7 +322,7 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
 
             }
                 
-            if (reservingUser && createdReservations) {
+            if (reservingUser && reservingUser.createdReservations) {
                 if (config.verbose) {
                     console.log('reservingUser');
                 }
