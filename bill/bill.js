@@ -1,4 +1,4 @@
-﻿
+﻿var Promise = require('es6-promise').Promise;
 var aws = require('aws-sdk');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
@@ -14,13 +14,15 @@ if (config.verbose) {
 var fromAddress = null;
 var serverTimeOffset = 0;
 exports.handler = function (params, context) {
+    if (config.verbose) {
+        console.log(params);
+        console.log(context);
+    }
+
     var stage = params.stage || 'dev';
     var result = '';
     if (params && params.event) {
-        if (config.verbose) {
-            console.log(params);
-            console.log(context);
-        }
+        
         
         var firebaseUrl = null;
         var authToken = null;
@@ -66,53 +68,89 @@ exports.handler = function (params, context) {
                 var _event = db.child('events/' + params.event);
                 var event = yield _event.get();
                 if (event) {
-                    var registration_ids = [];
-                    var registrations = [];
-                    Object.keys(event.registrations).forEach(function (key) {
-                        registration_ids.push(key);
-                    });
-                    
-                    for (var k = 0; k < registration_ids.length; k++) {
-                        var _registration = db.child('registrations/' + registration_ids[k]);
-                        var registration = yield _registration.get();
-                        if (registration) {
-                            registrations.push({
-                                'id': registration_ids[k],
-                                'ref': _registration,
-                                'value': registration
-                            });
-                        }
-                    }
-                    
-                    var billingUser = yield _billingUser.get();
-                    var billingDate = moment().valueOf();
-                    if (registrations && billingUser) {
-                        var promises = [];
-                        event.status = 'Billed';
-                        event.billedDate = billingDate;
-                        promises.push(_event.set(event));
-                        for (var i = 0; i < registrations.length; i++) {
-                            var registration = registrations[i].value;
-                            registration.status = 'Billed';
-                            registration.billingDate = billingDate;
-                            var _registration = registrations[i].ref;
-                            promises.push(_registration.set(registration));
+                    if (event.status === 'Approved') {
+                        var registration_ids = [];
+                        var registrations = [];
+                        Object.keys(event.registrations).forEach(function (key) {
+                            registration_ids.push(key);
+                        });
+                        
+                        for (var k = 0; k < registration_ids.length; k++) {
+                            var _registration = db.child('registrations/' + registration_ids[k]);
+                            var registration = yield _registration.get();
+                            if (registration) {
+                                var _user = db.child('users/' + registration.registeredUser);
+                                var user = yield _user.get();
+                                if (user) {
+                                    registrations.push({
+                                        'id': registration_ids[k],
+                                        'ref': _registration,
+                                        'value': registration,
+                                        'registeredUser': user
+                                    });
+                                }
+                            }
                         }
                         
-                        var _auditBilling = db.child('auditBillings/');
-                        var audit = {
-                            billingMember: billingUser.memberNumber,
-                            billingDate: billingDate,
-                            event: event.number
-                        };
-                        promises.push(_auditBilling.push(audit));
-                        
-                        yield promises;
-                        
-                        context.succeed({});
+                        var billingUser = yield _billingUser.get();
+                        var billingDate = moment().valueOf();
+                        if (registrations && billingUser) {
+                            var promises = [];
+                            event.status = 'Billed';
+                            event.billedDate = billingDate;
+                            promises.push(_event.set(event));
+                            for (var i = 0; i < registrations.length; i++) {
+                                var registration = registrations[i].value;
+                                var user = registrations[i].registeredUser;
+                                if (registration.status === 'Reserved' && user.status === 'Active') { //must be reserved to be billed & active
+                                    registration.status = 'Billed';
+                                    registration.billingDate = billingDate;
+                                    var _registration = registrations[i].ref;
+                                    promises.push(_registration.set(registration));
+                                }
+                                else {
+                                    var _billingErrors = db.child('billingErrors/');
+                                    if (registration.status !== 'Reserved') {
+                                        var err = {
+                                            billingMember: billingUser.memberNumber,
+                                            billingDate: billingDate,
+                                            event: event.number,
+                                            message: "Registration status of" + registation.status + " is invalid for registrations/" + registration.id
+                                        };
+                                        promises.push(_billingErrors.push(err));
+                                    }
+                                    if (user.status !== 'Active') {
+                                        var err = {
+                                            billingMember: billingUser.memberNumber,
+                                            billingDate: billingDate,
+                                            event: event.number,
+                                            message: "Member " + user.memberNumber + " is not 'Active' for registrations/" + registration.id
+                                        };
+                                        promises.push(_billingErrors.push(err));
+                                    }
+                                }
+                            }
+                            
+                            var _auditBilling = db.child('auditBillings/');
+                            var audit = {
+                                billingMember: billingUser.memberNumber,
+                                billingDate: billingDate,
+                                event: event.number
+                            };
+                            promises.push(_auditBilling.push(audit));
+                            
+                            yield promises;
+                            
+                            context.succeed({});
+                        }
+                        else {
+                            context.fail({});
+                        }
                     }
                     else {
-                        context.fail({});
+                        context.fail({
+                            "message": "Unable to cancel event "+ event.number+" because it's status is " + event.status
+                        });
                     }
                 }
                 else {

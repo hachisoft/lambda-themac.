@@ -2,6 +2,6 @@
 exports.handler = function (event, context) {
     console.log('started app.js');
 
-    var confirm = require('./bill.js');
-    confirm.handler(event, context);
+    var bill = require('./bill.js');
+    bill.handler(event, context);
 };
