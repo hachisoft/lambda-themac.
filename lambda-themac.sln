@@ -5,13 +5,15 @@ VisualStudioVersion = 12.0.31101.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "sign", "sign\sign.njsproj", "{93A99353-34B5-47FA-87C9-63D274E18909}"
 EndProject
-Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "confirm", "register\confirm.njsproj", "{5EB568AA-EC9C-4630-BF5A-1BD0CA06294C}"
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "confirm", "confirm\confirm.njsproj", "{5EB568AA-EC9C-4630-BF5A-1BD0CA06294C}"
 EndProject
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "image", "image\image.njsproj", "{1AC923EE-DC27-4344-B26C-FB6504EF667D}"
 EndProject
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "notify", "notify\notify.njsproj", "{9094601C-FF48-417F-95BB-697CC7D27CA2}"
 EndProject
 Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "delete", "delete\delete.njsproj", "{A7056EB8-7A4D-4E8D-B1FF-7B10578C74EC}"
+EndProject
+Project("{9092AA53-FB77-4645-B42D-1CCCA6BD08BD}") = "bill", "bill\bill.njsproj", "{D53251E5-BDF7-4545-BA6A-B337EB744B49}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -39,6 +41,10 @@ Global
 		{A7056EB8-7A4D-4E8D-B1FF-7B10578C74EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A7056EB8-7A4D-4E8D-B1FF-7B10578C74EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A7056EB8-7A4D-4E8D-B1FF-7B10578C74EC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D53251E5-BDF7-4545-BA6A-B337EB744B49}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D53251E5-BDF7-4545-BA6A-B337EB744B49}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D53251E5-BDF7-4545-BA6A-B337EB744B49}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D53251E5-BDF7-4545-BA6A-B337EB744B49}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

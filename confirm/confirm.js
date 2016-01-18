@@ -1,4 +1,4 @@
-﻿var Promis = require('es6-promise').Promise;
+﻿var Promise = require('es6-promise').Promise;
 var aws = require('aws-sdk');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
