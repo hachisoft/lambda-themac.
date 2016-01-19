@@ -596,19 +596,19 @@ function archiveAndDeleteEvent(db, _event, event, event_id, cancellingUser)
                     var fee = fees[k];
                     if (fee) {
                         cancelledEvent.fees[_fee.id] = {
-                            'type': fee.type,
-                            'amount': fee.amount,
-                            'minAge': fee.minAge,
-                            'maxAge': fee.maxAge,
-                            'GLNumber': fee.GLNumber,
-                            'GLTitle': fee.GLTitle,
-                            'cancellationAmount': fee.cancellationAmount,
-                            'noShowAmount': fee.noShowAmount,
-                            'description': fee.description
+                            'type': fee.type || '',
+                            'amount': fee.amount || 0,
+                            'minAge': fee.minAge || 0,
+                            'maxAge': fee.maxAge || 199,
+                            'GLNumber': fee.GLNumber || '',
+                            'GLTitle': fee.GLTitle || '',
+                            'cancellationAmount': fee.cancellationAmount || 0,
+                            'noShowAmount': fee.noShowAmount || 0,
+                            'description': fee.description || ''
                         };
                         if (fee.template) {
                             var _template = db.child('pricingTemplate/' + fee.template);
-                            var template = yield template.get();
+                            var template = yield _template.get();
                             if (template) {
                                
                                 delete template.fees[_fee.id];
@@ -616,7 +616,7 @@ function archiveAndDeleteEvent(db, _event, event, event_id, cancellingUser)
                             }
                         }
                     }
-                    promises.push(_fee.remove());
+                    promises.push(_fee.ref.remove());
                 }
             }
         }
