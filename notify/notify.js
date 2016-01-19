@@ -76,18 +76,20 @@ exports.handler = function (event, context) {
                     console.log(err, err.stack); // an error occurred
                 }
                 else {
-                    var templateBody = template.Body.toString();
-                    if (event.type === 'interest') {
-                        processInterestNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
-                    }
-                    else if (event.type === 'event') {
-                        processEventNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
-                    }
-                    else if (event.type === 'user') {
-                        processUserNotification(db, event.id, result, fromAddress, event.title, event.description, event.sentBy, templateBody);
-                    }
+                    co(function*() {
+                        var templateBody = template.Body.toString();
+                        if (event.type === 'interest') {
+                            yield processInterestNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
+                        }
+                        else if (event.type === 'event') {
+                            yield processEventNotification(db, event.id, fromAddress, event.title, event.description, event.sentBy, templateBody);
+                        }
+                        else if (event.type === 'user') {
+                            yield processUserNotification(db, event.id, result, fromAddress, event.title, event.description, event.sentBy, templateBody);
+                        }
 
-                    context.succeed({});
+                        context.succeed({});
+                    }).catch(onerror);
                 }
             });
         });
@@ -139,8 +141,8 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
 };
 
 function processEventNotification(db, event_id, fromAddress, title, description, sentBy, template) {
-    var p = "events/" + event_id;
     return co(function*() {
+        var p = "events/" + event_id;
         var path = db.child(p);
         var evt = yield path.get();
         if (evt) {
@@ -158,7 +160,6 @@ function processEventNotification(db, event_id, fromAddress, title, description,
 };
 
 function processInterestNotification(db, interest_id, fromAddress, title, description, sentBy, template) {
-    
     return co(function*() {
         var interest = yield db.child("interests/" + interest_id).get();
         if (interest) {
@@ -170,12 +171,13 @@ function processInterestNotification(db, interest_id, fromAddress, title, descri
                     var _userInterests = yield uiPath.get();
                     if (_userInterests) {
                         var userInterests = Object.keys(_userInterests);
-                        userInterests.forEach(function (key) {
+                        for (var ui = 0; ui < userInterests.length; ui++) {
+                            var key = userInterests[ui];
                             var userInterest = _userInterests[key];
                             if (userInterest) {
-                                processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
+                                yield processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
                             }
-                        });
+                        }
                     }
                 }
             }
@@ -184,14 +186,16 @@ function processInterestNotification(db, interest_id, fromAddress, title, descri
             var iPath = db.child("userInterests/").orderByChild('interest').equalTo(interest_id);
             var _userInterests = yield iPath.get();
             if (_userInterests) {
-                var userInterests = Object.keys(_userInterests);
-                userInterests.forEach(function (key) {
-                    var userInterest = _userInterests[key];
-                    if (userInterest) {
-                        processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
+                if (_userInterests) {
+                    var userInterests = Object.keys(_userInterests);
+                    for (var ui = 0; ui < userInterests.length; ui++) {
+                        var key = userInterests[ui];
+                        var userInterest = _userInterests[key];
+                        if (userInterest) {
+                            yield processUserNotification(db, userInterest.user, fromAddress, title, description, sentBy, template);
+                        }
                     }
-                });
-            }
+                }
         }
     }).catch(onerror);
 };
