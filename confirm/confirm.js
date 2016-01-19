@@ -1314,8 +1314,8 @@ function buildConfirmation(verb, db, user, user_id, event, registration, reserva
                     if (session) {
                         var sessionLocationName = '';
                         if (session.location) {
-                            var _sl = db.child('locations/' + session.location)
-                            var sl = yield sl.get();
+                            var _sl = db.child('locations/' + session.location);
+                            var sl = yield _sl.get();
                             if (sl) {
                                 sessionLocationName = sl.name || '';
                             }
