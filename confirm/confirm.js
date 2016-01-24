@@ -81,11 +81,13 @@ exports.handler = function (params, context) {
                 var _reservation = db.child('reservations/' + params.reservation);
                 co(function*() {
                     var reservation = yield _reservation.get();
-                    if (params.verb === 'Reserve') {
-                        yield processReservation(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
-                    }
-                    else if (params.verb === 'Cancel') {
-                        yield processReservationCancel(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                    if (reservation) {
+                        if (params.verb === 'Reserve' && reservation.status === 'Pending') {
+                            yield processReservation(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                        }
+                        else if (params.verb === 'Cancel') {
+                            yield processReservationCancel(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                        }
                     }
                     if (errors.length > 0) {
                         context.fail(JSON.stringify(errors));
@@ -190,6 +192,13 @@ function formatTime(epoch, fmt)
     return moment(epoch).utcOffset(-8).format(fmt);
 }
 
+function formatRange(range, fmt)
+{
+    var from = formatTime(range.start, fmt);
+    var to = formatTime(range.end, fmt);
+    return from + ' - ' + to;
+}
+
 function processWishlist(db, context, registration)
 {
     return co(function*() {
@@ -258,9 +267,20 @@ function processReservation(verb, db, context, _reservation, reservation, reserv
             }
         }
         if (_lr) {
-            Object.keys(_lr).forEach(function (key) {
-                locationReservations.push(_lr[key]);
-            });
+            var lrKeys = Object.keys(_lr);
+            for (var t = 0; t < lrKeys.length; t++) {
+                var key = lrKeys[t];
+                var lr = _lr[key];
+                var _lrSession = db.child('sessions/' + lr.session);
+                var lrSession = yield _lrSession.get();
+                if (lrSession) {
+                    locationReservations.push({
+                        'id': key,
+                        'value': lr,
+                        'session': lrSession
+                    });
+                }
+            }
         }
         if (_r) {
             Object.keys(_r).forEach(function (key) {
@@ -1026,14 +1046,21 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
     }
     if (!reservationUser) {
         reservation.validationError = 'Reservation user is invalid';
-        errors.push(registration.validationError);
+        errors.push(reservation.validationError);
         return false;
     }
     if (!reservingUser) {
         reservation.validationError = 'Reserving user is invalid';
-        errors.push(registration.validationError);
+        errors.push(reservation.validationError);
         return false;
     }
+    
+    if (!locationReservations) {
+        reservation.validationError = 'Location Reservations are invalid';
+        errors.push(reservation.validationError);
+        return false;
+    }
+
     if (reservingUser.isAdmin || reservingUser.isDeptHead) { //no rule checks
         return true;
     }
@@ -1041,16 +1068,33 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
     if (reservation.hasGuest) {
         if (!interestRule.guestAllowed) {
             reservation.validationError = 'Reservation has guest and a guest is not allowed';
-            errors.push(registration.validationError);
+            errors.push(reservation.validationError);
             return false;
         }
     }
     
     if (reservation.dateReserved && session.date) {
-        var reservationDate = moment(session.date);
-        var startOfReservationDate = reservationDate.clone().startOf('day');
+        var dateReserved = moment.utc(reservation.dateReserved).utcOffset(-8); //since aws is utc only we have to offset to get 'smart' local aware dates
+        var reservationDate = moment.utc(session.date).utcOffset(-8);
+        var reservationEndDate = moment(session.endDate);
+        var now = moment();
+        if (reservationEndDate.isBefore(now)) {
+            reservation.validationError = 'This session has already occurred';
+            errors.push(reservation.validationError);
+            return false;
+        }
+        var startOfReservationDate = reservationDate.clone().local().startOf('day');
+        var startOfDateReserved = dateReserved.clone().local().startOf('day');
+        if (config.verbose) {
+            console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
+            console.log('Start of date Reserved:' + formatTime(startOfDateReserved, 'MM/DD/YY @ h:mm A'));
+            console.log('Reservation date:' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A'));
+            console.log('Date Reserved:' + formatTime(dateReserved, 'MM/DD/YY @ h:mm A'));
+        }
         var reservationWindowOpens = config.reservationWindowOpens;
         var windowOpens = startOfReservationDate.clone().add(reservationWindowOpens || 0, 'minutes');
+        var dateReservedWindowOpens = startOfDateReserved.clone().add(reservationWindowOpens || 0, 'minutes');
+        var windowCloses = null;
         var playBegins = null;
         var playEnds = null;
         var reservationDay = reservationDate.day();
@@ -1058,6 +1102,9 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
         {
             playBegins = startOfReservationDate.clone().add(interestRule.sundayPlayBegins||0, 'minutes');
             playEnds = startOfReservationDate.clone().add(interestRule.sundayPlayEnds || 0, 'minutes');
+            if (config.verbose) {
+                console.log('Play Begins:' + formatTime(playBegins, 'MM/DD/YY @ h:mm A') + ')  Play Ends:' + formatTime(playEnds, 'MM/DD/YY @ h:mm A'));
+            }
         }
         else if (reservationDay === 6) //saturday
         {
@@ -1068,22 +1115,32 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
             playBegins = startOfReservationDate.clone().add(interestRule.weekdayPlayBegins || 0, 'minutes');
             playEnds = startOfReservationDate.clone().add(interestRule.weekdayPlayEnds || 0, 'minutes');
         }
-
-        var playRange = moment.range(playBegins.clone(), playEnds.clone());
         
+        var playRange = moment.range(playBegins.clone(), playEnds.clone());
+        if (config.verbose) {
+            console.log('Reservation (' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A') + ') Court open (' + formatRange(playRange, 'MM/DD/YY @ h:mm A') + ') ');
+        }
         if (!reservationDate.within(playRange)) {
-            reservation.validationError = 'Reservation falls outside of when the court is open';
-            errors.push(registration.validationError);
+            reservation.validationError = 'Reservation (' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A') + ') falls outside of when the court is open (' + formatRange(playRange, 'MM/DD/YY @ h:mm A') + ')';
+            errors.push(reservation.validationError);
+            
             return false;
+        }
+        
+        if (dateReserved.isAfter(dateReservedWindowOpens)) {
+            windowCloses = startOfReservationDate.clone().endOf('day');
+        }
+        else {
+            windowCloses = windowOpens.clone();
         }
 
         var reservationCreated = moment(reservation.dateReserved);
         var advancedWindow = (interestRule.advancedWindowLength || 0);
         var generalWindow = (interestRule.generalWindowLength || 0);
         var window = advancedWindow + generalWindow;
-        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'),windowOpens.clone());
-        if (!reservationDate.within(reservationRange)) {
-            reservation.validationError = 'Reservation falls outside of the '+window+ 'days when the reservation window is open';
+        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'),windowCloses.clone());
+        if (!dateReserved.within(reservationRange)) {
+            reservation.validationError = 'Reservation ('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
             errors.push(reservation.validationError);
             return false;
         }
@@ -1129,7 +1186,7 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (advancedReservationCount > locationRule.allowed) {
                         reservation.validationError = 'Only '+locationRule.allowed+' advanced reservations are allowed ' + locationRule.frequency;
-                        errors.push(registration.validationError);
+                        errors.push(reservation.validationError);
                         return false;
                     }
                 }
@@ -1156,7 +1213,7 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (reservationCount > locationRule.guestAllowed) {
                         reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed '+locationRule.frequency;
-                        errors.push(registration.validationError);
+                        errors.push(reservation.validationError);
                         return false;
                     }
                 }
@@ -1184,7 +1241,7 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (reservationCount > locationRule.guestAllowed) {
                         reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed ' + locationRule.frequency;
-                        errors.push(registration.validationError);
+                        errors.push(reservation.validationError);
                         return false;
                     }
                 }*/
@@ -1192,7 +1249,32 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
 
         }
     }
+    
+    if (session.date && session.endDate) {
+        var sessionRange = moment.range(moment(session.date), moment(session.endDate));
+        for (var lr = 0; lr < locationReservations.length; lr++) {
+            var locationReservation = locationReservations[lr];
+            if (locationReservation.id === reservation_id) {
+                continue;
+            }
 
+            if (locationReservation) {
+                if (locationReservation.value.reservationUser == reservation.reservationUser) {
+                    reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber+' today';
+                    errors.push(reservation.validationError);
+                    return false;
+                }
+                if (locationReservation.value.status === 'Reserved' || locationReservation.value.status === 'Billed') {
+                    var lrRange = moment.range(moment(locationReservation.session.date), moment(locationReservation.session.endDate));
+                    if (lrRange.isSame(sessionRange)) {
+                        reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber;
+                        errors.push(reservation.validationError);
+                        return false;
+                    }
+                }
+            }
+        }
+    }
     return true;
 };
 
