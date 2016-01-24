@@ -3,17 +3,17 @@ var config = require('./config.js');
 
 console.log('Loading Sign');
 
-exports.handler = function (event, context) {
-    var stage = event.stage || 'dev';
+exports.handler = function (params, context) {
+    var stage = params.stage || 'dev';
     
     if (config.verbose) {
         console.log(config);
         console.log('stage:' + stage);
-        if (event != null) {
-            console.log('event = ' + JSON.stringify(event));
+        if (params != null) {
+            console.log('params = ' + JSON.stringify(params));
         }
         else {
-            console.log('No event object');
+            console.log('No params object');
         }
     }
     var acl = "public-read";

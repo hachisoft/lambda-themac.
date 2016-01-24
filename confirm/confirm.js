@@ -4,7 +4,7 @@ var Firebase = require('firebase');
 var NodeFire = require('nodefire');
 var co = require('co');
 var moment = require('moment');
-
+var momentRange = require('moment-range');
 var serverTimeOffset = 0;
 
 var thunkify = require('thunkify');
@@ -27,6 +27,7 @@ if (config.verbose) {
     console.log('started confirm.js');
 }
 
+var errors = [];
 var fromAddress = null;
 
 exports.handler = function (params, context) {
@@ -80,14 +81,18 @@ exports.handler = function (params, context) {
                 var _reservation = db.child('reservations/' + params.reservation);
                 co(function*() {
                     var reservation = yield _reservation.get();
-                    
-                        if (params.verb === 'Reserve') {
-                            yield processReservation(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
-                        }
-                        else if (params.verb === 'Cancel') {
-                            yield processReservationCancel(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
-                        }
+                    if (params.verb === 'Reserve') {
+                        yield processReservation(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                    }
+                    else if (params.verb === 'Cancel') {
+                        yield processReservationCancel(params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                    }
+                    if (errors.length > 0) {
+                        context.fail(JSON.stringify(errors));
+                    }
+                    else {
                         context.succeed({});
+                    }
                     
                 }).catch(onerror);
             }
@@ -99,10 +104,12 @@ exports.handler = function (params, context) {
                     var cancellingUser = yield _cancellingUser.get();
                     if (event && params.verb === 'CancelEvent') {
                         yield processEventCancel(params.verb, db, context, _event, event, params.event, cancellingUser, params.cancellingUser, fromAddress, templateBucket);
-                        context.succeed({});
+                    }
+                    if (errors.length > 0) {
+                        context.fail(JSON.stringify(errors));
                     }
                     else {
-                        context.fail({'message':'Unable to cancel event: Invalid event'});
+                        context.succeed({});
                     }
                     
                 }).catch(onerror);
@@ -129,9 +136,15 @@ exports.handler = function (params, context) {
                         var registration_id = _registrations[k];
                         var _registration = db.child('registrations/' + registration_id);
                         if (registration) {
-                            if (params.verb === "Register" && registration.status === "Pending") {
-                                noneMatched = false;
-                                yield processRegistration(params.verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
+                            if (params.verb === "Register") {
+                                if (registration.status === "Pending") {
+                                    noneMatched = false;
+                                    yield processRegistration(params.verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
+                                }
+                                else if (registration.status === "Wishlist") {
+                                    noneMatched = false;
+                                    yield processWishlist(db, context, registration);
+                                }
                             }
                             else if (params.verb === "Cancel" || params.verb === "CancelEvent") {
                                 noneMatched = false;
@@ -151,15 +164,11 @@ exports.handler = function (params, context) {
                             }
                         }
                     }
-                    if (noneMatched) {
-                        if (config.verbose) {
-                            console.log("No registrations matched the desired status");
-                        }
-                        context.succeed(
-                            {
-                                result: "No registrations matched the desired status",
-                                verb: params.verb
-                            });
+                    if (errors.length > 0) {
+                        context.fail(JSON.stringify(errors));
+                    }
+                    else if (noneMatched) {
+                        context.fail('No registrations matched');
                     }
                     else {
                         context.succeed({});
@@ -179,6 +188,25 @@ exports.handler = function (params, context) {
 function formatTime(epoch, fmt)
 {
     return moment(epoch).utcOffset(-8).format(fmt);
+}
+
+function processWishlist(db, context, registration)
+{
+    return co(function*() {
+        if (registration.registeringUser) {
+            var _user = db.child('users/' + registration.registeringUser);
+            var user = yield _user.get();
+            if (user) {
+                if (user.numWishlist) {
+                    user.numWishlist++;
+                }
+                else {
+                    user.numWishlist = 1;
+                }
+                _user.set(user);
+            }
+        }
+    }).catch(onerror);
 }
 
 function processReservation(verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
@@ -210,10 +238,24 @@ function processReservation(verb, db, context, _reservation, reservation, reserv
         var locationReservations = [];
         var rules = [];
         if (_urfi) {
-            Object.keys(_urfi).forEach(function (key) {
-                if (_urfi[key].interest === reservation.interest)
-                    userReservationsForInterest.push(_urfi[key]);
-            });
+            var urfiKeys = Object.keys(_urfi);
+            for (var w = 0; w < urfiKeys.length; w++) {
+                var key = urfiKeys[w];
+                if (key != reservation_id) {
+                    if (_urfi[key].interest === reservation.interest) {
+                        var urfi = _urfi [key];
+                        var _urfiSession = db.child('sessions/' + urfi.session);
+                        var urfiSession = yield _urfiSession.get();
+                        if (urfiSession) {
+                            userReservationsForInterest.push({
+                                'id': key,
+                                'value': urfi,
+                                'session': urfiSession
+                            });
+                        }
+                    }
+                }
+            }
         }
         if (_lr) {
             Object.keys(_lr).forEach(function (key) {
@@ -233,7 +275,7 @@ function processReservation(verb, db, context, _reservation, reservation, reserv
         }
         
         if (session && reservationUser) {
-            if (validateReservation(db, reservationUser, reservation, location, interest, userReservationsForInterest, locationReservations, reservationRule, rules)) {
+            if (validateReservation(db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, reservationRule, rules, session)) {
                 reservation.status = "Reserved";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
@@ -253,7 +295,8 @@ function processReservation(verb, db, context, _reservation, reservation, reserv
                 }
             }
             else {
-                yield updateReservation(verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                reservation.isAdvRes = false;
+                yield updateReservation('Error-Reserve', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
             }
         }
     }).catch(onerror);
@@ -299,57 +342,74 @@ function processReservationCancel(verb, db, context, _reservation, reservation, 
         }
         
         if (session && reservationUser) {
-            reservation.status = "Cancelled";
+            if (validateReservationCancel(session,reservation,location,interest,reservingUser,reservationUser,reservation)) {
+                reservation.status = "Cancelled";
                 
-            var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
-            yield updateReservation(verb, db, _reservation, reservation,reservation_id, _session,session,_location,location,_reservationUser,reservationUser,_reservingUser,reservingUser,_interest,interest);
-            var details = yield buildConfirmation(verb, db, reservationUser, reservation.reservationUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket);
-            //send each person on the confirmation their conf
-            if (details) {
-                yield sendConfirmation(db, reservationUser, reservation.reservationUser, details, fromAddress);
-            }
-                
-            if (!primaryMemberConfirmation) { //now send one to the reserving user also
-                details = yield buildConfirmation(verb, db, reservingUser, reservation.reservingUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket);
+                var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
+                yield updateReservation(verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                var details = yield buildConfirmation(verb, db, reservationUser, reservation.reservationUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket);
                 //send each person on the confirmation their conf
                 if (details) {
-                    yield sendConfirmation(db, reservingUser, reservation.reservingUser, details, fromAddress);
+                    yield sendConfirmation(db, reservationUser, reservation.reservationUser, details, fromAddress);
+                }
+                
+                if (!primaryMemberConfirmation) { //now send one to the reserving user also
+                    details = yield buildConfirmation(verb, db, reservingUser, reservation.reservingUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket);
+                    //send each person on the confirmation their conf
+                    if (details) {
+                        yield sendConfirmation(db, reservingUser, reservation.reservingUser, details, fromAddress);
+                    }
                 }
             }
-            
+            else {
+                yield updateReservation('Error-Cancel', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+            }
         }
     }).catch(onerror);
 };
 
+function validateReservationCancel(session, reservation, location, interest, reservingUser, reservationUser, reservation)
+{
+    return true;
+}
+
 function updateReservation(verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest) {
     return co(function*() {
+        var promises = [];
+        var _auditReservations = db.child('auditReservations')    
+        var auditEntry = {
+            'verb': verb,
+            'timestamp': moment().valueOf()
+        };
         if (config.verbose) {
             console.log("updateReservation verb:" + verb);
         }
         if (verb === 'Cancel') {
-            var promises = [];
-                
+            
             if (reservationUser && reservationUser.reservations) {
-                if (config.verbose) {
-                    console.log('reservationUser');
+                if (reservationUser.memberNumber) {
+                    auditEntry.reservedMember = reservationUser.memberNumber
                 }
+                
                 delete reservationUser.reservations[reservation_id];
                 promises.push(_reservationUser.set(reservationUser));
 
             }
                 
             if (reservingUser && reservingUser.createdReservations) {
-                if (config.verbose) {
-                    console.log('reservingUser');
+                if (reservingUser.memberNumber) {
+                    auditEntry.reservingMember = reservingUser.memberNumber
                 }
+                
                 delete reservingUser.createdReservations[reservation_id];
                 promises.push(_reservingUser.set(reservingUser));
             }
                 
             if (location) {
-                if (config.verbose) {
-                    console.log('location');
+                if (location.name) {
+                    auditEntry.location = location.name
                 }
+                
                 if (location.reservations) {
                     delete location.reservations[reservation_id];
                 }
@@ -360,24 +420,27 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
             }
                 
             if (interest) {
-                if (config.verbose) {
-                    console.log('interest');
+                if (interest.name) {
+                    auditEntry.interest = interest.name
                 }
                 delete interest.reservations[reservation_id];
                 promises.push(_interest.set(interest));
             }
                 
             if (location && session && reservingUser && reservationUser && interest) {
-                if (config.verbose) {
-                    console.log('cancelledReservations');
+                if (session.date) {
+                    auditEntry.date = session.date
+                }
+                if (session.endDate) {
+                    auditEntry.endDate = session.endDate
                 }
                 var _cancelledReservations = db.child('cancelledReservations/');
                 var cancelledReservation = {
-                    reservingMember: reservingUser.memberNumber,
-                    reservationMember: reservationUser.memberNumber,
-                    sessionDate: session.date,
-                    location: location.name,
-                    interest: interest.name
+                    reservingMember: reservingUser.memberNumber || '',
+                    reservationMember: reservationUser.memberNumber|| '',
+                    sessionDate: session.date || moment().valueOf(),
+                    location: location.name || '',
+                    interest: interest.name || ''
                 };
                 promises.push(_cancelledReservations.push(cancelledReservation));
             }
@@ -395,11 +458,38 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
                 }
                 promises.push(_reservation.remove());
             }
-            yield promises;
+            
         }
-        else if (verb === 'Reserve') {
-            yield _reservation.set(reservation);
+        else if (verb === 'Reserve' || verb === 'Error-Reserve' || verb === 'Error-Cancel') //reserve and error just update the reservation
+        {
+            if (reservationUser && reservationUser.memberNumber) {
+                auditEntry.reservedMember = reservationUser.memberNumber
+            }
+            
+            if (reservingUser && reservingUser.memberNumber) {
+                auditEntry.reservingMember = reservingUser.memberNumber
+            }
+                
+            if (location && location.name) {
+                auditEntry.location = location.name
+            }
+                
+            if (interest && interest.name) {
+                auditEntry.interest = interest.name
+            }
+                
+            if (session) {
+                if (session.date) {
+                    auditEntry.date = session.date
+                }
+                if (session.endDate) {
+                    auditEntry.endDate = session.endDate
+                }
+            }
+            promises.push(_reservation.set(reservation));
         }
+        promises.push(_auditReservations.set(auditEntry));
+        yield promises;
     }).catch(onerror);
 };
 
@@ -449,7 +539,7 @@ function processRegistrationCancellation(verb, db, context, registration_id, _re
                 }
             }
             else {
-                yield updateRegistration(verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration('Error-Cancel', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
             }
         }
     }).catch(onerror);
@@ -475,7 +565,12 @@ function processEventCancel(verb, db, context, _event, event, event_id, cancelli
 
 function validateEventCancellation(db, cancellingUser, event)
 {
-    return true;
+    if (cancellingUser) {
+        if (cancellingUser.isAdmin || cancellingUser.isDeptHead) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function archiveAndDeleteEvent(db, _event, event, event_id, cancellingUser)
@@ -802,64 +897,63 @@ function processWaitlistModification(verb, db, context, _registration, registrat
 
 
 function processRegistration(verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket) {
-    if (config.verbose) { console.log("processRegistration"); }
-    var _event = db.child('events/' + registration.event);
-    if (_event) {
-        return _event.get().then(function (event) {
-            console.log(event);
-            if (event) {
-                var _confirmation = null;
-                if (event.confirmation)
-                    _confirmation = db.child('confirmations/' + event.confirmation);
-                var _registeredUser = db.child('users/' + registration.registeredUser);
-                var _registeringUser = db.child('users/' + registration.registeringUser);
-                var _fee = db.child('fees/' + registration.fee);
-                return co(function*() {
-                    var confirmation = null;
-                    if (_confirmation)
-                        confirmation = yield _confirmation.get();
-                    var registeredUser = yield _registeredUser.get();
-                    var registeringUser = yield _registeringUser.get();
-                    var fee = yield _fee.get();
-                    if (validateRegistration(db, registeredUser, registeringUser, registration, event)) {
-                        registration.status = "Reserved";
-                        registration.dateRegistered = moment().valueOf();
-                        if (!event.noRegistrationRequired) {
-                            if (event.available > 0) {
-                                event.available = event.available - 1;
-                            }
-                            else {
-                                registration.status = "Pending";
-                                registration.isOnWaitlist = true;
-                                verb = "Waitlist"; //change the verb so the correct template is sent out
-                                if (event.creatingUser) {
-                                    yield sendEventFull(db, event, fromAddress);
-                                }
-                            }
-                        }
-                        var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
-                        yield updateRegistration(verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
-                        var details = yield buildConfirmation(verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket);
-                        //send each person on the confirmation their conf
-                        if (details && event.sendAutoNotifications) {
-                            yield sendConfirmation(db, registeredUser, registration.registeredUser, details, fromAddress);
-                        }
-                        
-                        if (!primaryMemberConfirmation) { //now send one to the registering user also
-                            details = yield buildConfirmation(verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket);
-                            //send each person on the confirmation their conf
-                            if (details && event.sendAutoNotifications) {
-                                yield sendConfirmation(db, registeringUser, registration.registeringUser, details, fromAddress);
-                            }
-                        }
+    return co(function*() {
+        if (config.verbose) { console.log("processRegistration"); }
+        var _event = db.child('events/' + registration.event);
+        var event = yield _event.get();
+        if (event)
+        {
+            if (config.verbose) { console.log(event); }
+            var confirmation = null;    
+            var _confirmation = null;
+            if (event.confirmation) {
+                _confirmation = db.child('confirmations/' + event.confirmation);
+                confirmation = yield _confirmation.get();
+            }
+
+            var _registeredUser = db.child('users/' + registration.registeredUser);
+            var _registeringUser = db.child('users/' + registration.registeringUser);
+            var _fee = db.child('fees/' + registration.fee);
+            var registeredUser = yield _registeredUser.get();
+            var registeringUser = yield _registeringUser.get();
+            var fee = yield _fee.get();
+            if (validateRegistration(db, registeredUser, registeringUser, registration, event)) {
+                registration.status = "Reserved";
+                registration.dateRegistered = moment().valueOf();
+                if (!event.noRegistrationRequired) {
+                    if (event.available > 0) {
+                        event.available = event.available - 1;
                     }
                     else {
-                        yield updateRegistration(verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                        registration.status = "Pending";
+                        registration.isOnWaitlist = true;
+                        verb = "Waitlist"; //change the verb so the correct template is sent out
+                        if (event.creatingUser) {
+                            yield sendEventFull(db, event, fromAddress);
+                        }
                     }
-                }).catch(onerror);
+                }
+                var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
+                yield updateRegistration(verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                var details = yield buildConfirmation(verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket);
+                //send each person on the confirmation their conf
+                if (details && event.sendAutoNotifications) {
+                    yield sendConfirmation(db, registeredUser, registration.registeredUser, details, fromAddress);
+                }
+                        
+                if (!primaryMemberConfirmation) { //now send one to the registering user also
+                    details = yield buildConfirmation(verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket);
+                    //send each person on the confirmation their conf
+                    if (details && event.sendAutoNotifications) {
+                        yield sendConfirmation(db, registeringUser, registration.registeringUser, details, fromAddress);
+                    }
+                }
             }
-        });
-    }
+            else {
+                yield updateRegistration('Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+            }
+        }
+    }).catch(onerror);
 };
 
 function onerror(err) {
@@ -867,34 +961,45 @@ function onerror(err) {
     // co will not throw any errors you do not handle!!!
     // HANDLE ALL YOUR ERRORS!!!
     console.error(err);
+    errors.push(err);
 }
 
 function validateCancellation(db, user, registration, event, fee) {
-    if (!event)
+    
+    if (!event) {
+        errors.push('Event was not valid');
         return false;
-    if (!registration)
+    }
+    if (!registration) {
+        errors.push('Registration was not valid');
         return false;
-    if (event.noRegistrationRequired)
+    }
+    if (event.noRegistrationRequired) {
         return true;
+    }
     
     if (!user) {
         registration.validationError = 'Registered user is invalid';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (registration.status === 'Billed') {
-        registration.validationError = 'This registration has already been billed';
+        registration.validationError = 'Registration has already been billed';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (registration.status === 'Cancelled') {
+        errors.push('Registation already cancelled');
         return false;
     }
     
     if (event.cancelBy) {
         var threshold = moment(event.cancelBy);
         if (moment().isAfter(threshold)) {
-            registration.validationError = 'Registration must be cancelled prior to '+ formatTime(event.cancelBy,'MM/DD/YY @ h:mm A');
+            registration.validationError = 'Registration must be cancelled prior to ' + formatTime(event.cancelBy, 'MM/DD/YY @ h:mm A');
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -902,30 +1007,190 @@ function validateCancellation(db, user, registration, event, fee) {
     return true;
 };
 
-function validateReservation(db, reservationUser, reservingUser, reservation, location, interest, userReservationsForInterest, locationReservations, interestRule, locationRules) {
-    if (!location)
+function validateReservation(db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, interestRule, locationRules, session) {
+    if (!location) {
+        errors.push('Location was not valid');
         return false;
-    if (!interest)
+    }
+    if (!interest) {
+        errors.push('Interest was not valid');
         return false;
-    if (!reservation)
+    }
+    if (!reservation) {
+        errors.push('Reservation was not valid');
         return false;
+    }
+    if (!session) {
+        errors.push('Session was not valid');
+        return false;
+    }
     if (!reservationUser) {
         reservation.validationError = 'Reservation user is invalid';
+        errors.push(registration.validationError);
         return false;
     }
     if (!reservingUser) {
         reservation.validationError = 'Reserving user is invalid';
+        errors.push(registration.validationError);
         return false;
     }
     if (reservingUser.isAdmin || reservingUser.isDeptHead) { //no rule checks
         return true;
     }
     
-    if (reservation.dateReserved) {
-        var dateReserved = moment(reservation.dateReserved);
-        var window = (interestRule.generalWindowLength || 0) + (interestRule.advancedWindowLength || 0);
-        var dow = dateReserved.day();
+    if (reservation.hasGuest) {
+        if (!interestRule.guestAllowed) {
+            reservation.validationError = 'Reservation has guest and a guest is not allowed';
+            errors.push(registration.validationError);
+            return false;
+        }
+    }
+    
+    if (reservation.dateReserved && session.date) {
+        var reservationDate = moment(session.date);
+        var startOfReservationDate = reservationDate.clone().startOf('day');
+        var reservationWindowOpens = config.reservationWindowOpens;
+        var windowOpens = startOfReservationDate.clone().add(reservationWindowOpens || 0, 'minutes');
+        var playBegins = null;
+        var playEnds = null;
+        var reservationDay = reservationDate.day();
+        if (reservationDay === 0) //sunday
+        {
+            playBegins = startOfReservationDate.clone().add(interestRule.sundayPlayBegins||0, 'minutes');
+            playEnds = startOfReservationDate.clone().add(interestRule.sundayPlayEnds || 0, 'minutes');
+        }
+        else if (reservationDay === 6) //saturday
+        {
+            playBegins = startOfReservationDate.clone().add(interestRule.saturdayPlayBegins || 0, 'minutes');
+            playEnds = startOfReservationDate.clone().add(interestRule.saturdayPlayEnds || 0, 'minutes');
+        }
+        else { //weekday
+            playBegins = startOfReservationDate.clone().add(interestRule.weekdayPlayBegins || 0, 'minutes');
+            playEnds = startOfReservationDate.clone().add(interestRule.weekdayPlayEnds || 0, 'minutes');
+        }
+
+        var playRange = moment.range(playBegins.clone(), playEnds.clone());
         
+        if (!reservationDate.within(playRange)) {
+            reservation.validationError = 'Reservation falls outside of when the court is open';
+            errors.push(registration.validationError);
+            return false;
+        }
+
+        var reservationCreated = moment(reservation.dateReserved);
+        var advancedWindow = (interestRule.advancedWindowLength || 0);
+        var generalWindow = (interestRule.generalWindowLength || 0);
+        var window = advancedWindow + generalWindow;
+        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'),windowOpens.clone());
+        if (!reservationDate.within(reservationRange)) {
+            reservation.validationError = 'Reservation falls outside of the '+window+ 'days when the reservation window is open';
+            errors.push(reservation.validationError);
+            return false;
+        }
+        
+        var advancedReservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowOpens.clone().subtract(generalWindow, 'days'));
+        if (reservationDate.within(advancedReservationRange)) {
+            reservation.isAdvRes = true;
+        }
+
+        //interestRule frequency and allowed are ignored by mac
+        for (var k = 0; k < locationRules.length; k++) {
+            var locationRule = locationRules[k];
+            if (locationRule.impactExcludes) {
+                if (locationRule.impactExcludes.indexOf(reservationUser.classification) > -1) {//doesnt impact this member classification
+                    continue;
+                }
+            }
+            if (locationRule.impactIncludes) { 
+                if (locationRule.impactIncludes.indexOf(reservationUser.classification) === -1) {//doesnt impact this member classification
+                    continue;
+                }
+            }
+
+            if (locationRule.type === 'NumberOfAdvancedReservations') {
+                var advancedRange = null;
+                if (locationRule.frequency === 'PerWeek') {
+                    advancedRange = moment.range(startOfReservationDate.clone().startOf('week'), startOfReservationDate.clone().endOf('week'));
+                }
+                else {
+                    advancedRange = moment.range(startOfReservationDate.clone(), startOfReservationDate.clone().endOf('day'));
+                }
+
+                var advancedReservationCount = 0;
+                for (var i = 0; i < userReservationsForInterest.length; i++) {
+                    var urfi = userReservationsForInterest[i];
+                    if (urfi.value.isAdvRes) {
+                        var urfiDate = moment(urfi.session.date);
+                        if (urfiDate.within(advancedRange)) {
+                            advancedReservationCount++;
+                        }
+                    }
+                }
+                if (locationRule.memberOutcome === 'Restriction') {
+                    if (advancedReservationCount > locationRule.allowed) {
+                        reservation.validationError = 'Only '+locationRule.allowed+' advanced reservations are allowed ' + locationRule.frequency;
+                        errors.push(registration.validationError);
+                        return false;
+                    }
+                }
+            }
+            else if (locationRule.type === 'NumberOfReservationsPerGuest') {
+                var advancedRange = null;
+                if (locationRule.frequency === 'PerWeek') {
+                    advancedRange = moment.range(startOfReservationDate.clone().startOf('week'), startOfReservationDate.clone().endOf('week'));
+                }
+                else {
+                    advancedRange = moment.range(startOfReservationDate.clone(), startOfReservationDate.clone().endOf('day'));
+                }
+                
+                var reservationCount = 0;
+                for (var i = 0; i < userReservationsForInterest.length; i++) {
+                    var urfi = userReservationsForInterest[i];
+                    if (urfi.value.hasGuest) {
+                        var urfiDate = moment(urfi.session.date);
+                        if (urfiDate.within(advancedRange)) {
+                            reservationCount++;
+                        }
+                    }
+                }
+                if (locationRule.memberOutcome === 'Restriction') {
+                    if (reservationCount > locationRule.guestAllowed) {
+                        reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed '+locationRule.frequency;
+                        errors.push(registration.validationError);
+                        return false;
+                    }
+                }
+            }
+            else if (locationRule.type === 'RequiresPartner') {
+                /* currently ignored
+                var advancedRange = null;
+                if (locationRule.frequency === 'PerWeek') {
+                    advancedRange = moment.range(startOfReservationDate.clone().startOf('week'), startOfReservationDate.clone().endOf('week'));
+                }
+                else {
+                    advancedRange = moment.range(startOfReservationDate.clone(), startOfReservationDate.clone().endOf('day'));
+                }
+                
+                var reservationCount = 0;
+                for (var i = 0; i < userReservationsForInterest.length; i++) {
+                    var urfi = userReservationsForInterest[i];
+                    if (urfi.value.hasGuest) {
+                        var urfiDate = moment(urfi.session.date);
+                        if (urfiDate.within(advancedRange)) {
+                            reservationCount++;
+                        }
+                    }
+                }
+                if (locationRule.memberOutcome === 'Restriction') {
+                    if (reservationCount > locationRule.guestAllowed) {
+                        reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed ' + locationRule.frequency;
+                        errors.push(registration.validationError);
+                        return false;
+                    }
+                }*/
+            }
+
+        }
     }
 
     return true;
@@ -1027,9 +1292,9 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
         console.log('updateRegistration:'+verb);
     }
     return co(function*() {
+        var promises = [];
         if (verb === 'Cancel') {
             if (registration) {
-                var promises = [];
                 var locationName = null;
                 var interestName = null;
                 //this will delete the registration from associated models and add a new item to cancelledRegistrations
@@ -1083,24 +1348,24 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
                     }
                     var _cancelledRegistrations = db.child('cancelledRegistrations/');
                     var cancelledRegistration = {
-                        registeredMember: registeredUser.memberNumber,
-                        registeringMember: registeringUser.memberNumber,
-                        event: event.number,
-                        startDate: event.startDate,
-                        endDate: event.endDate,
-                        location: locationName,
-                        interest: interestName
+                        registeredMember: registeredUser.memberNumber || '',
+                        registeringMember: registeringUser.memberNumber || '',
+                        event: event.number || '',
+                        startDate: event.startDate || moment().valueOf(),
+                        endDate: event.endDate || moment().valueOf(),
+                        location: locationName || '',
+                        interest: interestName || ''
                     };
                     promises.push(_cancelledRegistrations.push(cancelledRegistration));
                 }
-
-                yield promises;
             }
         }
         else if (verb === 'Register' || verb === 'Waitlist') {
-            yield _event.set(event);
-            yield _registration.set(registration);
+            promises.push(_event.set(event));
+            promises.push(_registration.set(registration));
         }
+
+        yield promises;
     }).catch(onerror);
 };
 
