@@ -183,7 +183,7 @@ exports.handler = function (params, context) {
         if (config.verbose) {
             console.log('No event object');
         }
-        context.fail();
+        context.fail('No params object');
     }
 };
 
@@ -315,6 +315,7 @@ function processReservation(verb, db, context, _reservation, reservation, reserv
                 }
             }
             else {
+                reservation.status = 'Error';
                 reservation.isAdvRes = false;
                 yield updateReservation('Error-Reserve', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
             }
@@ -399,7 +400,8 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
         var _auditReservations = db.child('auditReservations')    
         var auditEntry = {
             'verb': verb,
-            'timestamp': moment().valueOf()
+            'timestamp': moment().valueOf(),
+            'validationError': reservation.validationError || ''
         };
         if (config.verbose) {
             console.log("updateReservation verb:" + verb);
@@ -508,7 +510,7 @@ function updateReservation(verb, db, _reservation, reservation, reservation_id, 
             }
             promises.push(_reservation.set(reservation));
         }
-        promises.push(_auditReservations.set(auditEntry));
+        promises.push(_auditReservations.push(auditEntry));
         yield promises;
     }).catch(onerror);
 };
@@ -970,6 +972,7 @@ function processRegistration(verb, db, context, registration_id, _registration, 
                 }
             }
             else {
+                registration.status = 'Error';
                 yield updateRegistration('Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
             }
         }
@@ -1083,8 +1086,8 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
             errors.push(reservation.validationError);
             return false;
         }
-        var startOfReservationDate = reservationDate.clone().local().startOf('day');
-        var startOfDateReserved = dateReserved.clone().local().startOf('day');
+        var startOfReservationDate = reservationDate.clone().startOf('day');
+        var startOfDateReserved = dateReserved.clone().startOf('day');
         if (config.verbose) {
             console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
             console.log('Start of date Reserved:' + formatTime(startOfDateReserved, 'MM/DD/YY @ h:mm A'));
@@ -1123,7 +1126,6 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
         if (!reservationDate.within(playRange)) {
             reservation.validationError = 'Reservation (' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A') + ') falls outside of when the court is open (' + formatRange(playRange, 'MM/DD/YY @ h:mm A') + ')';
             errors.push(reservation.validationError);
-            
             return false;
         }
         
@@ -1251,21 +1253,27 @@ function validateReservation(db, reservationUser, reservingUser, reservation, re
     }
     
     if (session.date && session.endDate) {
-        var sessionRange = moment.range(moment(session.date), moment(session.endDate));
+        var sessionDate = moment(session.date);
+        var sessionEndDate = moment(session.endDate);
+        var sessionRange = moment.range(sessionDate, sessionEndDate);
         for (var lr = 0; lr < locationReservations.length; lr++) {
             var locationReservation = locationReservations[lr];
-            if (locationReservation.id === reservation_id) {
-                continue;
-            }
-
             if (locationReservation) {
-                if (locationReservation.value.reservationUser == reservation.reservationUser) {
-                    reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber+' today';
-                    errors.push(reservation.validationError);
-                    return false;
+                var lrSessionDate = moment(locationReservation.session.date);
+                var lrSessionEndDate = moment(locationReservation.session.endDate);
+                var lrRange = moment.range(lrSessionDate, lrSessionEndDate);
+                if (locationReservation.id === reservation_id) {
+                    continue;
                 }
+
                 if (locationReservation.value.status === 'Reserved' || locationReservation.value.status === 'Billed') {
-                    var lrRange = moment.range(moment(locationReservation.session.date), moment(locationReservation.session.endDate));
+                    if (locationReservation.value.reservationUser === reservation.reservationUser) {
+                        if (lrSessionDate.isSame(sessionDate, 'day')) {
+                            reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber + ' today';
+                            errors.push(reservation.validationError);
+                            return false;
+                        }
+                    }
                     if (lrRange.isSame(sessionRange)) {
                         reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber;
                         errors.push(reservation.validationError);
@@ -1283,37 +1291,54 @@ function validateRegistration(db, user, registeringUser, registration, event) {
         return false;
     if (!registration)
         return false;
+    
+    if (event.status !== 'Approved') {
+        registration.validationError = 'Event '+event.number+' is not approved';
+        errors.push(registration.validationError);
+        return false;
+    }
+
     if (event.noRegistrationRequired)
         return true;
     
     if (!user) {
         registration.validationError = 'Registered user is invalid';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (!registeringUser) {
         registration.validationError = 'Registering user is invalid';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (registeringUser.isAdmin || registeringUser.isDeptHead) { //no rule checks
+        errors.push(registration.validationError);
         return true;
     }
     
     if (registration.status === 'Billed') {
         registration.validationError = 'This registration has already been billed';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (registration.status === 'Cancelled') {
         registration.validationError = 'This registration has already been cancelled';
+        errors.push(registration.validationError);
         return false;
     }
     
     if (registration.status === 'Reserved') { //already reserved?
         return false;
     }
-
+    var valid = validateEventRegistrationRules(user, registeringUser, registration, event);
+    if (event.restrictOnError)
+        return valid;
+    return true;
+}
+function validateEventRegistrationRules(user, registeringUser, registration, event) {
     var dob = moment(user.dob);
     var isMale = false;
     if (user.gender === 'Male') {
@@ -1321,19 +1346,23 @@ function validateRegistration(db, user, registeringUser, registration, event) {
     }
     if (!event.allowMales && isMale) {
         registration.validationError = 'Event does not allow males';
+        errors.push(registration.validationError);
         return false;
     }
     if (!event.allowFemales && !isMale) {
         registration.validationError = 'Event does not allow females';
+        errors.push(registration.validationError);
         return false;
     }
     if (!event.allowGuests && registration.isGuest) {
         registration.validationError = 'Event does not allow guests';
+        errors.push(registration.validationError);
         return false;
     }
     if (!event.allowWaitlist) {
         if (event.available < 1) {
             registration.validationError = 'Event does not allow waitlisting, and no has no available capacity';
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -1341,6 +1370,7 @@ function validateRegistration(db, user, registeringUser, registration, event) {
         var threshold = moment().subtract(event.minAge, 'years');
         if (dob.isAfter(threshold)) {
             registration.validationError = 'User is not old enough to register';
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -1348,6 +1378,7 @@ function validateRegistration(db, user, registeringUser, registration, event) {
         var threshold = moment().subtract(event.maxAge, 'years');
         if (dob.isBefore(threshold)) {
             registration.validationError = 'User is too old to register';
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -1355,6 +1386,7 @@ function validateRegistration(db, user, registeringUser, registration, event) {
         var threshold = moment(event.registrationOpen);
         if (moment().isBefore(threshold)) {
             registration.validationError = 'Event registration has not opened yet';
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -1362,6 +1394,7 @@ function validateRegistration(db, user, registeringUser, registration, event) {
         var threshold = moment(event.registrationClose);
         if (moment().isAfter(threshold)) {
             registration.validationError = 'Event registration has already closed';
+            errors.push(registration.validationError);
             return false;
         }
     }
@@ -1375,6 +1408,12 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
     }
     return co(function*() {
         var promises = [];
+        var _auditRegistrations = db.child('auditRegistrations')
+        var auditEntry = {
+            'verb': verb,
+            'timestamp': moment().valueOf(),
+            'validationError': registration.validationError || ''
+        };
         if (verb === 'Cancel') {
             if (registration) {
                 var locationName = null;
@@ -1438,15 +1477,59 @@ function updateRegistration(verb, db, registration_id, _registration, registrati
                         location: locationName || '',
                         interest: interestName || ''
                     };
+                    if (registeredUser.memberNumber) {
+                        auditEntry.registeredMember = registeredUser.memberNumber;
+                    }
+                    if (registeringUser.memberNumber) {
+                        auditEntry.registeringMember = registeringUser.memberNumber;
+                    }
+                    if (event.number) {
+                        auditEntry.eventNumber = event.number;
+                    }
+                    if (event.startDate) {
+                        auditEntry.startDate = event.startDate;
+                    }
+                    if (event.endDate) {
+                        auditEntry.endDate = event.endDate;
+                    }
+                    if (locationName) {
+                        auditEntry.location = locationName;
+                    }
+                    if (interestName) {
+                        auditEntry.interest = interestName;
+                    }
                     promises.push(_cancelledRegistrations.push(cancelledRegistration));
                 }
             }
         }
-        else if (verb === 'Register' || verb === 'Waitlist') {
+        else if (verb === 'Register' || verb === 'Waitlist' || verb === 'Error-Cancel' || verb === 'Error-Register') {
+            
+            if (registeredUser.memberNumber) {
+                auditEntry.registeredMember = registeredUser.memberNumber;
+            }
+            if (registeringUser.memberNumber) {
+                auditEntry.registeringMember = registeringUser.memberNumber;
+            }
+            if (event.number) {
+                auditEntry.eventNumber = event.number;
+            }
+            if (event.startDate) {
+                auditEntry.startDate = event.startDate;
+            }
+            if (event.endDate) {
+                auditEntry.endDate = event.endDate;
+            }
+            if (locationName) {
+                auditEntry.location = locationName;
+            }
+            if (interestName) {
+                auditEntry.interest = interestName;
+            }
+
             promises.push(_event.set(event));
             promises.push(_registration.set(registration));
         }
-
+        promises.push(_auditRegistrations.push(auditEntry));
         yield promises;
     }).catch(onerror);
 };
