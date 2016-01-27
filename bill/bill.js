@@ -21,8 +21,7 @@ exports.handler = function (params, context) {
 
     var stage = params.stage || 'dev';
     var result = '';
-    if (params && params.event) {
-        
+    if (params && params.event && params.billingUser) {
         
         var firebaseUrl = null;
         var authToken = null;
@@ -101,7 +100,7 @@ exports.handler = function (params, context) {
                             promises.push(_event.set(event));
                             for (var i = 0; i < registrations.length; i++) {
                                 var registration = registrations[i].value;
-                                var user = registrations[i].registeredUser;
+                                var user = registrations[i].registeringUser;
                                 if (registration.status === 'Reserved' && user.status === 'Active') { //must be reserved to be billed & active
                                     registration.status = 'Billed';
                                     registration.billingDate = billingDate;
@@ -148,20 +147,18 @@ exports.handler = function (params, context) {
                         }
                     }
                     else {
-                        context.fail({
-                            "message": "Unable to cancel event "+ event.number+" because it's status is " + event.status
-                        });
+                        context.fail("Unable to bill event " + event.number + " because it's status is " + event.status);
                     }
                 }
                 else {
-                    context.fail({});
+                    context.fail("Invalid Event");
                 }
                     
             }).catch(onerror);
         });
     }
     else {
-        context.fail({});
+        context.fail("Invalid parameters");
     }
 };
 

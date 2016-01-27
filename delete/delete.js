@@ -112,6 +112,11 @@ exports.handler = function (event, context) {
                             var event = yield _event.get();
                             if (event && event.registrations) {
                                 delete event.registrations[registration_id];
+                                
+                                if (registration.status === 'Reserved' && event.available) {
+                                    event.available--;
+                                }
+
                                 yield _event.set(event);
                             }
                         }

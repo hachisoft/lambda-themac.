@@ -97,7 +97,15 @@ exports.handler = function (params, context) {
                         else if (params.type === 'user') {
                             yield processUserNotification(db, params.id, result, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
                         }
-
+                        else if (params.type === 'closure') {
+                            yield processClosureNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        }
+                        else if (params.type === 'emergency') {
+                            yield processEmergencyNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        }
+                        else if (params.type === 'feedback') {
+                            yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        }
                         context.succeed({});
                     }).catch(onerror);
                 }
@@ -111,6 +119,102 @@ exports.handler = function (params, context) {
         context.fail('Error: Invalid params');
     }
 };
+
+function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processFeedbackNotification');
+        }
+        for (var i = 0; i < config.feedbackEmails.length; i++) {
+            var destEmail = config.feedbackEmails[i];
+            yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
+};
+
+
+function processClosureNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
+        var responses = yield _responses.get();
+        if (responses) {
+            var responseKeys = Object.keys(responses);
+            for (var i = 0; i < responseKeys.length; i++) {
+                var key = responseKeys[i];
+                var _resp = db.child('notificationResponses/' + key);
+                yield _resp.remove();
+            }
+        }
+    }).catch(onerror);
+};
+
+function processEmergencyNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
+        var responses = yield _responses.get();
+        if (responses) {
+            var responseKeys = Object.keys(responses);
+            for (var i = 0; i < responseKeys.length; i++) {
+                var key = responseKeys[i];
+                var _resp = db.child('notificationResponses/' + key);
+                yield _resp.remove();
+            }
+        }
+        var _notifyUsers = db.child('users/').orderByChild('sendNotificationConfirmation').equalTo(true);
+        var notifyUsers = yield _notifyUsers.get();
+        if (notifyUsers) {
+            var notifyUsersKeys = Object.keys(notifyUsers);
+            for (var ui = 0; ui < notifyUsersKeys.length; ui++) {
+                var key = notifyUsersKeys[ui];
+                var notifyUser = notifyUsers[key];
+                if (notifyUser) {
+                    if (notifyUser.numNewNotifications) {
+                        notifyUser.numNewNotifications++;
+                    }
+                    else {
+                        notifyUser.numNewNotifications = 1;
+                    }
+                    var _user = db.child('users/' + key);
+                    yield _user.set(notifyUser);
+                }
+            }
+        }
+
+        var _notifyEmails = db.child('users/').orderByChild('sendEmailConfirmation').equalTo(true);
+        var notifyEmails = yield _notifyEmails.get();
+        if (notifyEmails) {
+            var notifyEmailKeys = Object.keys(notifyEmails);
+            for (var ui = 0; ui < notifyEmailKeys.length; ui++) {
+                var key = notifyEmailKeys[ui];
+                var notifyEmail = notifyEmails[key];
+                if (notifyEmail) {
+                    var details = yield buildNotification(db, notifyEmail, key, template, title, description, sentBy, image);
+                    transporter.sendMail({
+                        from: fromAddress,
+                        to: user.email,
+                        subject: title,
+                        html: details.content
+                    }, function (error, info) {
+                        if (error) {
+                            if (config.verbose) {
+                                console.log(error);
+                            }
+                        }
+                        else if (info) {
+                            if (config.verbose) {
+                                console.log(info);
+                            }
+                        }
+                    }); 
+                }
+            }
+            
+        }
+    }).catch(onerror);
+};
+
+
+
 
 function processUserNotification(db, user_id, fromAddress, title, description, sentBy, image, template) {
     return co(function*() {
@@ -252,4 +356,36 @@ function buildNotification(db, user, user_id, template, title, description, sent
     return details;
 };
 
+
+function sendEmail(fromAddress, to, subject, content, message, attachment) {
+    return new Promise(function (resolve, reject) {
+        var attachments = [];
+        if (attachment) {
+            attachments.push(attachment);
+        }
+        transporter.sendMail({
+            from: fromAddress,
+            to: to,
+            subject: subject,
+            html: content,
+            text: message,
+            attachments: attachments
+        }, function (error, info) {
+            if (error) {
+                if (config.verbose) {
+                    console.log('sendEmail error');
+                    console.log(error);
+                }
+                if (info) {
+                    console.log(info);
+                }
+                reject(error);
+            }
+            if (config.verbose) {
+                console.log('email sent');
+            }
+            resolve();
+        });
+    });
+}
 

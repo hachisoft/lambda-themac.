@@ -21,6 +21,10 @@ var config = {
     "prodS3Secret": 'qk46uq70LwWjmkajun5e1fMcpF4OJnd0vryesoVB',
     "devS3Secret": 'Hn/MqHv7XxHcTv5p5MngKwzk1CwnbkFICN670rz7',
     "prod2S3Secret": 'qk46uq70LwWjmkajun5e1fMcpF4OJnd0vryesoVB',
-    "verbose": true
+    "verbose": true,
+    "feedbackEmails": [
+        'msdedwards@hachisoft.com',
+        'czoucha@themac.com'
+    ]
 }
 module.exports = config
