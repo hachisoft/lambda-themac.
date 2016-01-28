@@ -25,6 +25,10 @@ var config = {
     "feedbackEmails": [
         'msdedwards@hachisoft.com',
         'czoucha@themac.com'
-    ]
+    ],
+    "childcareEmails": [
+        'msdedwards@hachisoft.com',
+        'czoucha@themac.com'
+    ],
 }
 module.exports = config

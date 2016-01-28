@@ -67,7 +67,7 @@ exports.handler = function (params, context) {
                 var _event = db.child('events/' + params.event);
                 var event = yield _event.get();
                 if (event) {
-                    if (event.status === 'Approved') {
+                    if (event.status === 'Approved' || event.status==='Billed') {
                         var registration_ids = [];
                         var registrations = [];
                         Object.keys(event.registrations).forEach(function (key) {
@@ -78,14 +78,14 @@ exports.handler = function (params, context) {
                             var _registration = db.child('registrations/' + registration_ids[k]);
                             var registration = yield _registration.get();
                             if (registration) {
-                                var _user = db.child('users/' + registration.registeredUser);
+                                var _user = db.child('users/' + registration.registeringUser);
                                 var user = yield _user.get();
                                 if (user) {
                                     registrations.push({
                                         'id': registration_ids[k],
                                         'ref': _registration,
                                         'value': registration,
-                                        'registeredUser': user
+                                        'registeringUser': user
                                     });
                                 }
                             }
@@ -101,31 +101,36 @@ exports.handler = function (params, context) {
                             for (var i = 0; i < registrations.length; i++) {
                                 var registration = registrations[i].value;
                                 var user = registrations[i].registeringUser;
-                                if (registration.status === 'Reserved' && user.status === 'Active') { //must be reserved to be billed & active
-                                    registration.status = 'Billed';
-                                    registration.billingDate = billingDate;
-                                    var _registration = registrations[i].ref;
-                                    promises.push(_registration.set(registration));
-                                }
-                                else {
-                                    var _billingErrors = db.child('billingErrors/');
-                                    if (registration.status !== 'Reserved') {
-                                        var err = {
-                                            billingMember: billingUser.memberNumber,
-                                            billingDate: billingDate,
-                                            event: event.number,
-                                            message: "Registration status of" + registation.status + " is invalid for registrations/" + registration.id
-                                        };
-                                        promises.push(_billingErrors.push(err));
+                                if (user) {
+                                    if (registration.status === 'Reserved' && user.status === 'Active') { //must be reserved to be billed & active
+                                        registration.status = 'Billed';
+                                        registration.billingDate = billingDate;
+                                        var _registration = registrations[i].ref;
+                                        promises.push(_registration.set(registration));
                                     }
-                                    if (user.status !== 'Active') {
-                                        var err = {
-                                            billingMember: billingUser.memberNumber,
-                                            billingDate: billingDate,
-                                            event: event.number,
-                                            message: "Member " + user.memberNumber + " is not 'Active' for registrations/" + registration.id
-                                        };
-                                        promises.push(_billingErrors.push(err));
+                                    else if (registration.status === 'Billed') {
+                                        //already billed
+                                    }
+                                    else {
+                                        var _billingErrors = db.child('billingErrors/');
+                                        if (registration.status !== 'Reserved') {
+                                            var err = {
+                                                billingMember: billingUser.memberNumber,
+                                                billingDate: billingDate,
+                                                event: event.number,
+                                                message: "Registration status of" + registration.status + " is invalid for registrations/" + registration.id
+                                            };
+                                            promises.push(_billingErrors.push(err));
+                                        }
+                                        if (user.status !== 'Active') {
+                                            var err = {
+                                                billingMember: billingUser.memberNumber,
+                                                billingDate: billingDate,
+                                                event: event.number,
+                                                message: "Member " + user.memberNumber + " is not 'Active' for registrations/" + registration.id
+                                            };
+                                            promises.push(_billingErrors.push(err));
+                                        }
                                     }
                                 }
                             }
@@ -154,7 +159,9 @@ exports.handler = function (params, context) {
                     context.fail("Invalid Event");
                 }
                     
-            }).catch(onerror);
+            }).catch(function (err) {
+                console.log(err);
+            });
         });
     }
     else {
@@ -162,9 +169,4 @@ exports.handler = function (params, context) {
     }
 };
 
-function onerror(err) {
-    // log any uncaught errors
-    // co will not throw any errors you do not handle!!!
-    // HANDLE ALL YOUR ERRORS!!!
-    console.error(err);
-}
+

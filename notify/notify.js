@@ -106,6 +106,9 @@ exports.handler = function (params, context) {
                         else if (params.type === 'feedback') {
                             yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
                         }
+                        else if (params.type === 'childcare') {
+                            yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        }
                         context.succeed({});
                     }).catch(onerror);
                 }
@@ -131,6 +134,19 @@ function processFeedbackNotification(db, fromAddress, title, description, sentBy
         }
     }).catch(onerror);
 };
+
+function processChildcareNotification(db, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processChildNotification');
+        }
+        for (var i = 0; i < config.childcareEmails.length; i++) {
+            var destEmail = config.childcareEmails[i];
+            yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
+};
+
 
 
 function processClosureNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
