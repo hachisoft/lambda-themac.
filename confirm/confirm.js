@@ -566,10 +566,12 @@ function processRegistrationCancellation(errors, verb, db, context, registration
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
             if (validateCancellation(errors, db, registeredUser, registration, event, fee)) {
-                registration.status = "Cancelled";
-                if (!event.noRegistrationRequired) {
+                if (!event.noRegistrationRequired && registration.status === 'Reserved' ) {
                     event.available = event.available + 1;
                 }
+                
+                registration.status = "Cancelled";
+                
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                 yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
                 if (registeredUser) {
@@ -1031,11 +1033,11 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
 function validateCancellation(errors, db, user, registration, event, fee) {
     
     if (!event) {
-        errors.push('Event was not valid');
+        AddError(errors,'Event was not valid');
         return false;
     }
     if (!registration) {
-        errors.push('Registration was not valid');
+        AddError(errors, 'Registration was not valid');
         return false;
     }
     if (event.noRegistrationRequired) {
@@ -1044,12 +1046,12 @@ function validateCancellation(errors, db, user, registration, event, fee) {
     
     if (registration.status === 'Billed') {
         registration.validationError = 'Registration has already been billed';
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return false;
     }
     
     if (registration.status === 'Cancelled') {
-        errors.push('Registation already cancelled');
+        AddError(errors,'Registation already cancelled');
         return false;
     }
     
@@ -1057,7 +1059,7 @@ function validateCancellation(errors, db, user, registration, event, fee) {
         var threshold = moment(event.cancelBy);
         if (moment().isAfter(threshold)) {
             registration.validationError = 'Registration must be cancelled prior to ' + formatTime(event.cancelBy, 'MM/DD/YY @ h:mm A');
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
@@ -1067,35 +1069,35 @@ function validateCancellation(errors, db, user, registration, event, fee) {
 
 function validateReservation(errors, db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, interestRule, locationRules, session) {
     if (!location) {
-        errors.push('Location was not valid');
+        AddError(errors, 'Location was not valid');
         return false;
     }
     if (!interest) {
-        errors.push('Interest was not valid');
+        AddError(errors, 'Interest was not valid');
         return false;
     }
     if (!reservation) {
-        errors.push('Reservation was not valid');
+        AddError(errors, 'Reservation was not valid');
         return false;
     }
     if (!session) {
-        errors.push('Session was not valid');
+        AddError(errors, 'Session was not valid');
         return false;
     }
     if (!reservationUser) {
         reservation.validationError = 'Reservation user is invalid';
-        errors.push(reservation.validationError);
+        AddError(errors,reservation.validationError);
         return false;
     }
     if (!reservingUser) {
         reservation.validationError = 'Reserving user is invalid';
-        errors.push(reservation.validationError);
+        AddError(errors,reservation.validationError);
         return false;
     }
     
     if (!locationReservations) {
         reservation.validationError = 'Location Reservations are invalid';
-        errors.push(reservation.validationError);
+        AddError(errors,reservation.validationError);
         return false;
     }
 
@@ -1106,7 +1108,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
     if (reservation.hasGuest) {
         if (!interestRule.guestAllowed) {
             reservation.validationError = 'Reservation has guest and a guest is not allowed';
-            errors.push(reservation.validationError);
+            AddError(errors,reservation.validationError);
             return false;
         }
     }
@@ -1118,7 +1120,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         var now = moment();
         if (reservationEndDate.isBefore(now)) {
             reservation.validationError = 'The '+  formatTime(reservationDate, ' MM / DD / YY @ h: mm A ')+'-'+ formatTime(reservationEndDate, ' MM / DD / YY @ h: mm A ')+' session has already occurred';
-            errors.push(reservation.validationError);
+            AddError(errors,reservation.validationError);
             return false;
         }
         var startOfReservationDate = reservationDate.clone().startOf('day');
@@ -1160,7 +1162,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         }
         if (!playRange.contains(reservationDate)) {
             reservation.validationError = 'Reservation (' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A') + ') falls outside of when the court is open (' + formatRange(playRange, 'MM/DD/YY @ h:mm A') + ')';
-            errors.push(reservation.validationError);
+            AddError(errors,reservation.validationError);
             return false;
         }
         
@@ -1178,7 +1180,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'),windowCloses.clone());
         if (!reservationRange.contains(dateReserved)) {
             reservation.validationError = 'Reservation ('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
-            errors.push(reservation.validationError);
+            AddError(errors,reservation.validationError);
             return false;
         }
         
@@ -1223,7 +1225,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (advancedReservationCount > locationRule.allowed) {
                         reservation.validationError = 'Only '+locationRule.allowed+' advanced reservations are allowed ' + locationRule.frequency;
-                        errors.push(reservation.validationError);
+                        AddError(errors,reservation.validationError);
                         return false;
                     }
                 }
@@ -1250,7 +1252,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (reservationCount > locationRule.guestAllowed) {
                         reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed '+locationRule.frequency;
-                        errors.push(reservation.validationError);
+                        AddError(errors,reservation.validationError);
                         return false;
                     }
                 }
@@ -1278,7 +1280,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                 if (locationRule.memberOutcome === 'Restriction') {
                     if (reservationCount > locationRule.guestAllowed) {
                         reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed ' + locationRule.frequency;
-                        errors.push(reservation.validationError);
+                        AddError(errors,reservation.validationError);
                         return false;
                     }
                 }*/
@@ -1305,13 +1307,13 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                     if (locationReservation.value.reservationUser === reservation.reservationUser) {
                         if (lrSessionDate.isSame(sessionDate, 'day')) {
                             reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber + ' today';
-                            errors.push(reservation.validationError);
+                            AddError(errors,reservation.validationError);
                             return false;
                         }
                     }
                     if (lrRange.overlaps(sessionRange)) {
                         reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber;
-                        errors.push(reservation.validationError);
+                        AddError(errors,reservation.validationError);
                         return false;
                     }
                 }
@@ -1325,7 +1327,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                 if (urfiDate) {
                     if (urfiDate.isSame(sessionDate, 'day')) {
                         reservation.validationError = 'Member '+urfi.value.memberNumber + ' has already made a '+interest.name+' reservation ('+ formatTime(urfiDate,'MM/DD/YY @ h:mm A')+')';
-                        errors.push(reservation.validationError);
+                        AddError(errors,reservation.validationError);
                         return false;
                     }
                 }
@@ -1341,9 +1343,9 @@ function validateRegistration(errors, db, user, registeringUser, registration, e
     if (!registration)
         return false;
     
-    if (event.status !== 'Approved') {
-        registration.validationError = 'Event '+event.number+' is not approved';
-        errors.push(registration.validationError);
+    if (event.status !== 'Approved' && event.status !== 'Billed' ) {
+        registration.validationError = 'Event '+event.number+' has a status of' + event.status;
+        AddError(errors,registration.validationError);
         return false;
     }
 
@@ -1353,31 +1355,31 @@ function validateRegistration(errors, db, user, registeringUser, registration, e
     if (!user) {
         if (!registration.isGuest && !registration.isRapidRegistration) {
             registration.validationError = 'Registered user is invalid';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
     
     if (!registeringUser) {
         registration.validationError = 'Registering user is invalid';
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return false;
     }
     
     if (registeringUser.isAdmin || registeringUser.isDeptHead) { //no rule checks
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return true;
     }
     
     if (registration.status === 'Billed') {
         registration.validationError = 'This registration has already been billed';
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return false;
     }
     
     if (registration.status === 'Cancelled') {
         registration.validationError = 'This registration has already been cancelled';
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return false;
     }
     
@@ -1401,18 +1403,18 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
         }
         if (!event.allowMales && isMale) {
             registration.validationError = 'Event does not allow males';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
         if (!event.allowFemales && !isMale) {
             registration.validationError = 'Event does not allow females';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
     if (!event.allowGuests && registration.isGuest) {
         registration.validationError = 'Event does not allow guests';
-        errors.push(registration.validationError);
+        AddError(errors,registration.validationError);
         return false;
     }
     
@@ -1423,7 +1425,7 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
     if (!registration.isRapidRegistration) {
         if (!dob) {
             registration.validationError = 'Dob is invalid';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
         
@@ -1431,7 +1433,7 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
             var threshold = moment().subtract(event.minAge, 'years');
             if (dob.isAfter(threshold)) {
                 registration.validationError = 'User is not old enough to register';
-                errors.push(registration.validationError);
+                AddError(errors,registration.validationError);
                 return false;
             }
         }
@@ -1439,7 +1441,7 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
             var threshold = moment().subtract(event.maxAge, 'years');
             if (dob.isBefore(threshold)) {
                 registration.validationError = 'User is too old to register';
-                errors.push(registration.validationError);
+                AddError(errors,registration.validationError);
                 return false;
             }
         }
@@ -1448,7 +1450,7 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
     if (!event.allowWaitlist) {
         if (event.available < 1) {
             registration.validationError = 'Event does not allow waitlisting, and no has no available capacity';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
@@ -1457,7 +1459,7 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
         var threshold = moment(event.registrationOpen);
         if (moment().isBefore(threshold)) {
             registration.validationError = 'Event registration has not opened yet';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
@@ -1465,13 +1467,21 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
         var threshold = moment(event.registrationClose);
         if (moment().isAfter(threshold)) {
             registration.validationError = 'Event registration has already closed';
-            errors.push(registration.validationError);
+            AddError(errors,registration.validationError);
             return false;
         }
     }
     
     return true;
 };
+
+function AddError(errors, err)
+{
+    if (errors && err) {
+        errors.push(err);
+        console.log(err);
+    }
+}
 
 function updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
     if (config.verbose) {

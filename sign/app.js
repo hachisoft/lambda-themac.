@@ -20,9 +20,12 @@ exports.handler = function (params, context) {
     var bucket = '';
     var secret = '';
     var key = '';
+    var contentType = params.type || 'image/png';
+    var contentDisposition = params.contentDisposition || '';
     
     var templateBucket = '';
     if (stage === 'v0') {
+
         bucket = config.prodContentBucket;
         secret = config.prodS3Secret;
         firebaseUrl = config.prodFirebaseUrl;
@@ -44,7 +47,20 @@ exports.handler = function (params, context) {
         key = "AKIAJJWTOTVFHP2VKYVQ"; 
     }
     
+    var bucketPrefix = '';
+    if (params.bucketPrefix) {
+        bucketPrefix = params.bucketPrefix;
+        if (bucketPrefix.indexOf('/', params.bucketPrefix.length - 1) === -1) {
+            bucketPrefix += '/';
+        }
+    }
     var endpoint = "https://s3-us-west-2.amazonaws.com/" + bucket;
+    
+    if (config.verbose) {
+        console.log(bucket);
+        console.log(bucketPrefix);
+        console.log(endpoint);
+    }
 
     var expires = new Date(Date.now() + 120000);
     
@@ -55,9 +71,10 @@ exports.handler = function (params, context) {
             { acl: acl },
             { expires: expires },
             { success_action_status: '201' },
-            ['starts-with', '$key', ''],
+            ['starts-with', '$key', bucketPrefix],
             ['starts-with', '$Content-Type', ''],
             ['starts-with', '$Cache-Control', ''],
+            ['starts-with', '$Content-Disposition', ''],
             ['content-length-range', 0, 524288000]
         ]
     };
@@ -72,9 +89,10 @@ exports.handler = function (params, context) {
         'awsaccesskeyid': key,
         'bucket': bucket,
         'Cache-Control': 'max-age=630720000, public',
-        'Content-Type': 'image/png',
+        'Content-Type': contentType,
+        'Content-Disposition': contentDisposition,
         'expires': expires,
-        'key': uniqueId,
+        'key': bucketPrefix + uniqueId,
         'policy': base64Policy,
         'signature': signature,
         'success_action_status': '201'
