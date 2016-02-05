@@ -1691,7 +1691,7 @@ function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
             }
             
             if (user.sendEmailConfirmation) {
-                yield sendEmail(fromAddress, details.email, details.eventName, details.content,null,details.attachment);
+                yield sendEmail(fromAddress, details.email, details.subject, details.content,null,details.attachment);
             }
         }
     }).catch(function (err) {
@@ -1761,42 +1761,54 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         var mark = require('markup-js');
         
         var template = null;
-        if (confirmation && confirmation.confirmationTemplate) {
-            if (verb === 'Register') {
-                template = yield download(confirmation.confirmationTemplate);
+        var subject = "";
+        if (confirmation) {
+            if (confirmation.confirmationTemplate) {
+                if (verb === 'Register') {
+                    template = yield download(confirmation.confirmationTemplate);
+                }
+                else if (verb === 'Reserve') {
+                    template = yield download(confirmation.confirmationTemplate);
+                }
             }
-            else if (verb === 'Reserve') {
-                template = yield download(confirmation.confirmationTemplate);
-            }
-            else if (verb === 'Cancel') {
+            else if (confirmation.cancellationTemplate && verb === 'Cancel') {
                 template = yield download(confirmation.cancellationTemplate);
             }
-            else if (verb === 'Modify') {
+            else if (confirmation.modificationTemplate && verb === 'Modify') {
                 template = yield download(confirmation.modificationTemplate);
-            }
-            else if (verb === 'Waitlist') {
+                }
+            else if (confirmation.waitlistTemplate && verb === 'Waitlist') {
                 template = yield download(confirmation.waitlistTemplate);
             }
-            else if (verb === 'WaitlistModify') {
+            else if (confirmation.waitlistModificationTemplate && verb === 'WaitlistModify') {
                 template = yield download(confirmation.waitlistModificationTemplate);
+            }
+            
+            if (confirmation.confirmationSubject) {
+                subject = confirmation.confirmationSubject;
             }
         } else {
             var templateName = "confirmation.html";
             if (verb === 'Cancel') {
                 templateName = "cancellation.html";
                 if (reservation) {
+                    subject = "MAC Reservation Cancellation";
                     templateName = "reservation_cancellation.html";
                 }
             }
             else if (verb === 'CancelEvent') {
+                subject = "MAC Event Cancellation";
                 templateName = "event_cancellation.html";
             }
             else if (verb === 'Reserve') {
+                subject = "MAC Reservation Confirmation";
                 templateName = "reservation_confirmation.html";
             }
             else if (verb === 'Modify') {
+                subject = "MAC Registration Modification";
                 templateName = "modification.html";
                 if (reservation) {
+                    subject = "MAC Reservation Modification";
                     templateName = "reservation_modification.html";
                 }
             }
@@ -1816,7 +1828,7 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         }
         
         var cal = null;
-        if (verb === 'Register') {
+        if (verb === 'Register' || verb === 'Reserve') {
             cal = ical();
             cal.prodId({
                 company: 'MAC',
@@ -1834,6 +1846,7 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         var cancelBy = '';
         var reservationDate = '';
         var reservationStartTime = '';
+        var reservationAsset = null;
         var sessions = [];
         if (event) {
             cancelBy = formatTime(event.cancelBy,'MMM Do h:mm a');
@@ -1896,9 +1909,39 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         }
             
         if (reservation) {
+            if (reservation.asset) {
+                var _a = db.child('reservationAssets/' + reservation.asset);
+                var asset = yield _a.get();
+                if (asset) {
+                    reservationAsset = asset.name;
+                }
+            }
             var _c = db.child('sessions/' + reservation.session);
             var session = yield _c.get();
             if (session) {
+                
+                if (cal) {
+                    eventName = location + " Reservation";
+                    cal.setName(eventName);
+                    var ce = cal.createEvent({
+                        start: moment(session.date).toDate(),
+                        end: moment(session.date + (session.duration * 60000)).toDate(),
+                        summary: eventName,
+                        description: eventDescription,
+                        location: location,
+                        method: 'publish'
+                    });
+                    if (ce && user) {
+                        ce.createAttendee({
+                            email: user.email,
+                            name: user.name
+                        });
+                        ce.organizer({
+                            name: 'The MAC',
+                            email: fromAddress
+                        });
+                    }
+                }
                 reservationDate = formatTime(session.date,'MMM Do');
                 reservationStartTime = formatTime(session.date,'h:mm a');
             }
@@ -1929,16 +1972,21 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             reservationDate: reservationDate,
             reservationStartTime: reservationStartTime,
             location: location,
-            attachment: attachment
+            attachment: attachment,
+            subject: subject,
         };
         
-        if (config.verbose) {
-            console.log(details);
+        if (reservationAsset) {
+            details.reservationAsset = reservationAsset;
         }
         
         if (template) {
             var templateBody = template.Body.toString();
             details.content = mark.up(templateBody, details);
+        }
+        
+        if (config.verbose) {
+            console.log(details);
         }
         
         return details;
