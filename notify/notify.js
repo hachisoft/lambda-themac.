@@ -141,7 +141,7 @@ function processChildcareNotification(db, fromAddress, title, description, sentB
             console.log('processChildNotification');
         }
         for (var i = 0; i < config.childcareEmails.length; i++) {
-            var destEmail = config.childcareEmails[i];
+            var destEmail = config.feedbackEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);
@@ -166,6 +166,21 @@ function processClosureNotification(db, notification_id, fromAddress, title, des
 
 function processEmergencyNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
     return co(function*() {
+        
+        if (config.verbose) {
+            console.log('processEmergencyNotification');
+            console.log({
+                'notification_id': notification_id,
+                'fromAddress': fromAddress,
+                'title': title,
+                'description': description,
+                'sentBy': sentBy,
+                'image': image,
+            });
+        }
+        
+        var promises = [];
+
         var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
         var responses = yield _responses.get();
         if (responses) {
@@ -173,7 +188,7 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
             for (var i = 0; i < responseKeys.length; i++) {
                 var key = responseKeys[i];
                 var _resp = db.child('notificationResponses/' + key);
-                yield _resp.remove();
+                promises.push(_resp.remove());
             }
         }
         var _notifyUsers = db.child('users/').orderByChild('sendNotificationConfirmation').equalTo(true);
@@ -191,7 +206,7 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
                         notifyUser.numNewNotifications = 1;
                     }
                     var _user = db.child('users/' + key);
-                    yield _user.set(notifyUser);
+                    promises.push(_user.set(notifyUser));
                 }
             }
         }
@@ -207,7 +222,7 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
                     var details = yield buildNotification(db, notifyEmail, key, template, title, description, sentBy, image);
                     transporter.sendMail({
                         from: fromAddress,
-                        to: user.email,
+                        to: notifyEmail.email,
                         subject: title,
                         html: details.content
                     }, function (error, info) {
@@ -226,7 +241,12 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
             }
             
         }
-    }).catch(onerror);
+        yield promises;
+    }).catch(function (err) {
+        if (config.verbose) {
+            console.error(err.stack);
+        }
+    });
 };
 
 
