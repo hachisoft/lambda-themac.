@@ -180,10 +180,16 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
         }
         
         var promises = [];
-
+        
+        if (config.verbose) {
+            console.log('notificationResponses');
+        }
         var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
         var responses = yield _responses.get();
         if (responses) {
+            if (config.verbose) {
+                console.log('responses');
+            }
             var responseKeys = Object.keys(responses);
             for (var i = 0; i < responseKeys.length; i++) {
                 var key = responseKeys[i];
@@ -191,9 +197,11 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
                 promises.push(_resp.remove());
             }
         }
+        
         var _notifyUsers = db.child('users/').orderByChild('sendNotificationConfirmation').equalTo(true);
         var notifyUsers = yield _notifyUsers.get();
         if (notifyUsers) {
+            
             var notifyUsersKeys = Object.keys(notifyUsers);
             for (var ui = 0; ui < notifyUsersKeys.length; ui++) {
                 var key = notifyUsersKeys[ui];
@@ -205,38 +213,24 @@ function processEmergencyNotification(db, notification_id, fromAddress, title, d
                     else {
                         notifyUser.numNewNotifications = 1;
                     }
-                    var _user = db.child('users/' + key);
-                    promises.push(_user.set(notifyUser));
+                    var _user = db.child('users/' + key +'/numNewNotifications');
+                    
+                    promises.push(_user.set(notifyUser.numNewNotifications));
                 }
             }
         }
-
+        
         var _notifyEmails = db.child('users/').orderByChild('sendEmailConfirmation').equalTo(true);
         var notifyEmails = yield _notifyEmails.get();
         if (notifyEmails) {
             var notifyEmailKeys = Object.keys(notifyEmails);
+            
             for (var ui = 0; ui < notifyEmailKeys.length; ui++) {
                 var key = notifyEmailKeys[ui];
                 var notifyEmail = notifyEmails[key];
                 if (notifyEmail) {
                     var details = yield buildNotification(db, notifyEmail, key, template, title, description, sentBy, image);
-                    transporter.sendMail({
-                        from: fromAddress,
-                        to: notifyEmail.email,
-                        subject: title,
-                        html: details.content
-                    }, function (error, info) {
-                        if (error) {
-                            if (config.verbose) {
-                                console.log(error);
-                            }
-                        }
-                        else if (info) {
-                            if (config.verbose) {
-                                console.log(info);
-                            }
-                        }
-                    }); 
+                    yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
                 }
             }
             
@@ -259,13 +253,15 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
         if (user) {
             var details = yield buildNotification(db, user, user_id, template, title, description, sentBy, image);
             if (user.sendNotificationConfirmation) {
+                //update just this attribute
+                var _user = db.child('users/' + user_id + '/numNewNotifications');
                 if (user.numNewNotifications) {
                     user.numNewNotifications++;
                 }
                 else {
                     user.numNewNotifications = 1;
                 }
-                yield _user.set(user);
+                yield _user.set(user.numNewNotifications);
                 var key = db.generateUniqueKey();
                 var _notification = db.child('notifications/' + key);
                 
@@ -281,23 +277,7 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
             }
             
             if (user.sendEmailConfirmation) {
-                transporter.sendMail({
-                    from: fromAddress,
-                    to: user.email,
-                    subject: title,
-                    html: details.content
-                }, function (error, info) {
-                    if (error) {
-                        if (config.verbose) {
-                            console.log(error);
-                        }
-                    }
-                    else if (info) {
-                        if (config.verbose) {
-                            console.log(info);
-                        }
-                    }
-                });
+                yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
             }
         }
     }).catch(onerror);

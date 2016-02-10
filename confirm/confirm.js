@@ -158,7 +158,7 @@ exports.handler = function (params, context) {
                             }
                             else if (params.verb === "Cancel" || params.verb === "CancelEvent") {
                                 noneMatched = false;
-                                yield processRegistrationCancellation(errors, params.verb,db, context, registration_id, _registration, registration, fromAddress, templateBucket);
+                                yield processRegistrationCancellation(errors, params.verb, params.cancellingUser, db, context, registration_id, _registration, registration, fromAddress, templateBucket);
                             }
                             else if (params.verb === "Modify" && registration.status === "Reserved") {
                                 noneMatched = false;
@@ -420,30 +420,79 @@ function updateReservation(errors, verb, db, _reservation, reservation, reservat
         var auditEntry = {
             'verb': verb,
             'timestamp': moment().valueOf(),
-            'validationError': reservation.validationError || ''
+            'validationError': reservation.validationError || '',
+            'reservation': reservation_id
         };
         if (config.verbose) {
             console.log("updateReservation verb:" + verb);
         }
         if (verb === 'Cancel') {
-            
-            if (reservationUser && reservationUser.reservations) {
-                if (reservationUser.memberNumber) {
-                    auditEntry.reservedMember = reservationUser.memberNumber
+            if (reservation.asset) {
+                var _asset = db.child('reservationAssets/' + reservation.asset);
+                if (_asset) {
+                    var asset = yield _asset.get();
+                    if (asset) {
+                        delete asset.reservations[reservation_id];
+                        promises.push(_asset.set(asset));
+                    }
                 }
-                
-                delete reservationUser.reservations[reservation_id];
-                promises.push(_reservationUser.set(reservationUser));
-
             }
+            
+            var sameUser = false;
+            if (reservation.reservingUser === reservation.reservationUser) {
+                sameUser = true;
+            }
+            
+            if (sameUser) {
+                var user = reservingUser || reservationUser;
+                var _user = _reservingUser || _reservationUser;
                 
-            if (reservingUser && reservingUser.createdReservations) {
-                if (reservingUser.memberNumber) {
-                    auditEntry.reservingMember = reservingUser.memberNumber
+                if (config.verbose) {
+                    console.log("sameUser");
+                    console.log(user);
+                }
+
+                if (user.reservations) {
+                    if (user.memberNumber) {
+                        auditEntry.reservedMember = user.memberNumber
+                    }
+                    
+                    delete user.reservations[reservation_id];
                 }
                 
-                delete reservingUser.createdReservations[reservation_id];
-                promises.push(_reservingUser.set(reservingUser));
+                if (user.createdReservations) {
+                    if (user.memberNumber) {
+                        auditEntry.reservingMember = user.memberNumber
+                    }
+                    
+                    delete user.createdReservations[reservation_id];
+                    
+                }
+                promises.push(_user.set(user));
+            }
+            else {
+                if (reservationUser && reservationUser.reservations) {
+                    if (reservationUser.memberNumber) {
+                        auditEntry.reservedMember = reservationUser.memberNumber
+                    }
+                    
+                    delete reservationUser.reservations[reservation_id];
+                    if (!sameUser) { //note separateUser is used to distinguish so we don't end up with an add remove
+                        promises.push(_reservationUser.set(reservationUser));
+                    }
+
+                }
+                
+                if (reservingUser && reservingUser.createdReservations) {
+                    if (reservingUser.memberNumber) {
+                        auditEntry.reservingMember = reservingUser.memberNumber
+                    }
+                    
+                    delete reservingUser.createdReservations[reservation_id];
+                    
+                    promises.push(_reservingUser.set(reservingUser));
+
+                }
             }
                 
             if (location) {
@@ -499,6 +548,8 @@ function updateReservation(errors, verb, db, _reservation, reservation, reservat
                 }
                 promises.push(_reservation.remove());
             }
+
+
             
         }
         else if (verb === 'Reserve' || verb === 'Error-Reserve' || verb === 'Error-Cancel') //reserve and error just update the reservation
@@ -532,11 +583,12 @@ function updateReservation(errors, verb, db, _reservation, reservation, reservat
         promises.push(_auditReservations.push(auditEntry));
         yield promises;
     }).catch(function (err) {
-        console.log(err);  
+        console.log(err);
+        console.log(err.stack);
     });
 };
 
-function processRegistrationCancellation(errors, verb, db, context, registration_id, _registration, registration, fromAddress, templateBucket) {
+function processRegistrationCancellation(errors, verb, cancellingUser_id, db, context, registration_id, _registration, registration, fromAddress, templateBucket) {
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
@@ -559,19 +611,20 @@ function processRegistrationCancellation(errors, verb, db, context, registration
             var _registeringUser = db.child('users/' + registration.registeringUser);
             var _fee = db.child('fees/' + registration.fee);
             
+            var _cancellingUser = null;
+            var cancellingUser = null;
+            if (cancellingUser_id) {
+                _cancellingUser = db.child('users/' + cancellingUser_id);
+                cancellingUser = yield _cancellingUser.get();
+            }
+            
             var confirmation = null;
             if (_confirmation)
                 confirmation = yield _confirmation.get();
             
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
-            if (validateCancellation(errors, db, registeredUser, registration, event, fee)) {
-                if (!event.noRegistrationRequired && registration.status === 'Reserved' ) {
-                    event.available = event.available + 1;
-                }
-                
-                registration.status = "Cancelled";
-                
+            if (validateCancellation(errors, db, cancellingUser, registration, event, fee)) {
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                 yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
                 if (registeredUser) {
@@ -595,7 +648,10 @@ function processRegistrationCancellation(errors, verb, db, context, registration
             }
         }
     }).catch(function (err) {
-        console.log(err);  
+        console.log(err);
+        if (err.stack) {
+            console.log(err.stack);  
+        }
     });
 };
 
@@ -989,7 +1045,15 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
                 registration.dateRegistered = moment().valueOf();
                 if (!event.noRegistrationRequired) {
                     if (event.available > 0) {
-                        event.available = event.available - 1;
+                        var _eventAvailable = db.child('events/' + registration.event + '/available');
+                        yield _eventAvailable.transaction(function (available) {
+                            if (available === null) {
+                                return event.capacity;
+                            }
+                            else {
+                                return available - 1;
+                            }
+                        });
                     }
                     else {
                         registration.status = "Pending";
@@ -1030,7 +1094,7 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
 };
 
 
-function validateCancellation(errors, db, user, registration, event, fee) {
+function validateCancellation(errors, db, cancellingUser, registration, event, fee) {
     
     if (!event) {
         AddError(errors,'Event was not valid');
@@ -1040,6 +1104,15 @@ function validateCancellation(errors, db, user, registration, event, fee) {
         AddError(errors, 'Registration was not valid');
         return false;
     }
+    
+    if (!cancellingUser) {
+        AddError(errors, 'Cancelling User was not valid');
+        return false;
+    }
+    
+    if (cancellingUser.isAdmin || cancellingUser.isDeptHead)
+        return true;
+
     if (event.noRegistrationRequired) {
         return true;
     }
@@ -1367,7 +1440,6 @@ function validateRegistration(errors, db, user, registeringUser, registration, e
     }
     
     if (registeringUser.isAdmin || registeringUser.isDeptHead) { //no rule checks
-        AddError(errors,registration.validationError);
         return true;
     }
     
@@ -1488,41 +1560,81 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
         console.log('updateRegistration:'+verb);
     }
     return co(function*() {
+        var atomicWrite = {};
         var promises = [];
         var _auditRegistrations = db.child('auditRegistrations')
         var auditEntry = {
             'verb': verb,
             'timestamp': moment().valueOf(),
-            'validationError': registration.validationError || ''
+            'validationError': registration.validationError || '',
+            'registration': registration_id
         };
         if (verb === 'Cancel' || verb === 'CancelEvent') {
             if (registration) {
+                if (!event.noRegistrationRequired && registration.status === 'Reserved') {
+                    var _eventAvailable = db.child('events/' + registration.event + '/available');
+                    yield _eventAvailable.transaction(function (available) {
+                        return available + 1;
+                    });
+                }
+                
+                registration.status = "Cancelled";
+
                 var locationName = null;
                 var interestName = null;
                 //this will delete the registration from associated models and add a new item to cancelledRegistrations
-                if (registration.registeringUser) {
-                    if (registeringUser && registeringUser.createdRegistrations) {
-                        delete registeringUser.createdRegistrations[registration_id];
-                        promises.push(_registeringUser.set(registeringUser));
-                    }
+                
+                var sameUser = false;
+                if (registration.registeredUser === registration.registeringUser) {
+                    sameUser = true;
                 }
-                if (registration.registeredUser) {
-                    if (registeredUser && registeredUser.registrations) {
-                        delete registeredUser.registrations[registration_id];
-                        promises.push(_registeredUser.set(registeredUser));
+                
+                if (sameUser) {
+                    var _user = _registeringUser || _registeredUser;
+                    var user = registeringUser || registeredUser;
+                    
+                    if (config.verbose) {
+                        console.log("sameUser");
+                        console.log(user);
+                    }
+                    
+                    if (registration.registeringUser) {
+                        if (user && user.createdRegistrations) {
+                            delete user.createdRegistrations[registration_id];
+                        }
+                    }
+                    if (registration.registeredUser) {
+                        if (user && user.registrations) {
+                            delete user.registrations[registration_id];
+                        }
+                    }
+                    atomicWrite[_user.key()] = user;
+                }
+                else {
+                    if (registration.registeringUser) {
+                        if (registeringUser && registeringUser.createdRegistrations) {
+                            delete registeringUser.createdRegistrations[registration_id];
+                            atomicWrite[_registeringUser.key()] = registeringUser;
+                        }
+                    }
+                    if (registration.registeredUser) {
+                        if (registeredUser && registeredUser.registrations) {
+                            delete registeredUser.registrations[registration_id];
+                            atomicWrite[_registeredUser.key()] = registeredUser;
+                        }
                     }
                 }
                 if (registration.fee) {
                     if (fee && fee.registrations) {
                         delete fee.registrations[registration_id];
-                        promises.push(_fee.set(fee));
+                        atomicWrite[_fee.key()] = fee;
                     }
                 }
                 if (registration.event) {
                     if (event){
                         if (event.registrations) {
                             delete event.registrations[registration_id];
-                            promises.push(_event.set(event));
+                            atomicWrite[_event.key()] = event;
                         }
                         if (event.interest) {
                             var _interest = db.child('interests/' + event.interest);
@@ -1621,10 +1733,10 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
                 auditEntry.interest = interestName;
             }
 
-            promises.push(_event.set(event));
             promises.push(_registration.set(registration));
         }
         promises.push(_auditRegistrations.push(auditEntry));
+        promises.push(db.update(atomicWrite));
         yield promises;
     }).catch(function (err) {
         console.log(err);  
@@ -1669,14 +1781,15 @@ function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
             if (config.verbose) { console.log("sendConfirmation from " + fromAddress + " to " + user.email); }
             
             if (user.sendNotificationConfirmation) {
-                var _user = db.child('users/' + user_id);
+                //update just this attribute
+                var _user = db.child('users/' + user_id+'/numNewNotifications');
                 if (user.numNewNotifications) {
                     user.numNewNotifications++;
                 }
                 else {
                     user.numNewNotifications = 1;
                 }
-                yield _user.set(user);
+                yield _user.set(user.numNewNotifications);
                 var key = db.generateUniqueKey();
                 var _notification = db.child('notifications/' + key);
                 
