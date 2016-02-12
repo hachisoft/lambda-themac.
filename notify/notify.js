@@ -69,12 +69,27 @@ exports.handler = function (params, context) {
         
         console.log(config);
         
+        var templateName = "notification.html";
+        if (params.type === "notifyPromotion" && params.eventDetails) {
+            if (params.eventDetails.length == 1) {
+                templateName = "promotion1.html";
+            }
+            else if (params.eventDetails.length == 2) {
+                templateName = "promotion2.html";
+            }
+            else if (params.eventDetails.length == 3) {
+                templateName = "promotion3.html";
+            }
+            else if (params.eventDetails.length == 4) {
+                templateName = "promotion4.html";
+            }
+        }
+
         NodeFire.setCacheSize(10);
         NodeFire.DEBUG = true;
         var db = new NodeFire(firebaseUrl);
         db.auth(authToken).then(function () {
             console.log('Auth succeeded');
-            var templateName = "notification.html";
             s3.getObject({
                 Bucket: templateBucket, 
                 Key: templateName
@@ -109,6 +124,9 @@ exports.handler = function (params, context) {
                         else if (params.type === 'childcare') {
                             yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
                         }
+                        else if (params.type === 'notifyPromotion') {
+                            yield processPromotionNotification(db, fromAddress, params.includeParkingProjection, params.eventDetails, templateBody);
+                        }
                         context.succeed({});
                     }).catch(onerror);
                 }
@@ -121,6 +139,18 @@ exports.handler = function (params, context) {
         }
         context.fail('Error: Invalid params');
     }
+};
+
+function processPromotionNotification(db, fromAddress, includeParkingProjection, eventDetails, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processPromotionNotification');
+        }
+        for (var i = 0; i < config.feedbackEmails.length; i++) {
+            var destEmail = config.feedbackEmails[i];
+            yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
 };
 
 function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template) {

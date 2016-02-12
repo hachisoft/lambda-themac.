@@ -1608,33 +1608,33 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
                             delete user.registrations[registration_id];
                         }
                     }
-                    atomicWrite[_user.key()] = user;
+                    atomicWrite[_user.toString()] = user;
                 }
                 else {
                     if (registration.registeringUser) {
                         if (registeringUser && registeringUser.createdRegistrations) {
                             delete registeringUser.createdRegistrations[registration_id];
-                            atomicWrite[_registeringUser.key()] = registeringUser;
+                            atomicWrite[_registeringUser.toString()] = registeringUser;
                         }
                     }
                     if (registration.registeredUser) {
                         if (registeredUser && registeredUser.registrations) {
                             delete registeredUser.registrations[registration_id];
-                            atomicWrite[_registeredUser.key()] = registeredUser;
+                            atomicWrite[_registeredUser.toString()] = registeredUser;
                         }
                     }
                 }
                 if (registration.fee) {
                     if (fee && fee.registrations) {
                         delete fee.registrations[registration_id];
-                        atomicWrite[_fee.key()] = fee;
+                        atomicWrite[_fee.toString()] = fee;
                     }
                 }
                 if (registration.event) {
                     if (event){
                         if (event.registrations) {
                             delete event.registrations[registration_id];
-                            atomicWrite[_event.key()] = event;
+                            atomicWrite[_event.toString()] = event;
                         }
                         if (event.interest) {
                             var _interest = db.child('interests/' + event.interest);
