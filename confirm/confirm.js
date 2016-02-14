@@ -20,7 +20,8 @@ var ses = require('nodemailer-ses-transport');
 
 
 var transporter = nodemailer.createTransport(ses({
-    region: 'us-west-2'
+    region: 'us-west-2',
+    rateLimit: 20
 }));
 
 if (config.verbose) {

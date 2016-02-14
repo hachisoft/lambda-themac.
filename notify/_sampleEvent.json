@@ -1,1 +1,14 @@
-﻿{ "stage": "dev", "type": "emergency", "title": "Test Alert", "description": "Alerty!", "id": "-K9xcfmMbCxR8MWI7N4T" }
+﻿{
+  "stage": "dev",
+  "type": "notifyPromotion",
+  "interests": [ "-KA5xlFFDObT4puADnCh" ],
+  "draft": "tedwards@hachisoft.com",
+  "subject": "test subject",
+  "contactInfo": "Contact Tyler",
+  "includeParkingProjection":  true,
+  "eventDetails": [
+    {
+      "id":  "-KA5xuJ2PE4J1XCT9AOx","title": "Test Title","description": "Test Description"
+    }
+  ]
+}

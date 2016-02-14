@@ -13,13 +13,15 @@ var util = require('util');
 //var s3 = new S3();
 
 var s3 = new aws.S3();
+var SNS = new aws.SNS();
 
 var nodemailer = require('nodemailer');
 var ses = require('nodemailer-ses-transport');
 
 
 var transporter = nodemailer.createTransport(ses({
-    region: 'us-west-2'
+    region: 'us-west-2',
+    rateLimit: 20
 }));
 
 if (config.verbose) {
@@ -48,23 +50,31 @@ exports.handler = function (params, context) {
         var firebaseUrl = null;
         var authToken = null;
         var templateBucket = '';
+        var bulkARN = null;
+        var linkRoot = null;
         if (stage === 'v0') {
             templateBucket = config.prodTemplateBucket;
             authToken = config.prodSecret;
             firebaseUrl = config.prodFirebaseUrl;
             fromAddress = config.prodFromAddress;
+            bulkARN = config.prodBulkARN;
+            linkRoot = config.prodLinkRoot;
         }
         else if (stage === 'v0_2') {
             templateBucket = config.prod2TemplateBucket;
             authToken = config.prod2Secret;
             firebaseUrl = config.prod2FirebaseUrl;
             fromAddress = config.prodFromAddress;
+            bulkARN = config.prod2BulkARN;
+            linkRoot = config.prod2LinkRoot;
         }
         else {
             templateBucket = config.devTemplateBucket;
             authToken = config.devSecret;
             firebaseUrl = config.devFirebaseUrl;
             fromAddress = config.fromAddress;
+            bulkARN = config.devBulkARN;
+            linkRoot = config.devLinkRoot;
         }
         
         console.log(config);
@@ -89,7 +99,11 @@ exports.handler = function (params, context) {
         NodeFire.DEBUG = true;
         var db = new NodeFire(firebaseUrl);
         db.auth(authToken).then(function () {
-            console.log('Auth succeeded');
+            if (config.verbose) {
+                console.log('Auth succeeded');
+                console.log({'templateBucket':templateBucket,'templateName':templateName});
+            }
+            
             s3.getObject({
                 Bucket: templateBucket, 
                 Key: templateName
@@ -125,7 +139,8 @@ exports.handler = function (params, context) {
                             yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
                         }
                         else if (params.type === 'notifyPromotion') {
-                            yield processPromotionNotification(db, fromAddress, params.includeParkingProjection, params.eventDetails, templateBody);
+
+                            yield processPromotionNotification(db, fromAddress, stage, linkRoot, params.specialCaption, params.draft, bulkARN, params.subject, params.contactInfo, params.interests, params.includeParkingProjection, params.eventDetails, templateBody);
                         }
                         context.succeed({});
                     }).catch(onerror);
@@ -141,17 +156,169 @@ exports.handler = function (params, context) {
     }
 };
 
-function processPromotionNotification(db, fromAddress, includeParkingProjection, eventDetails, template) {
+function isString(value) {
+    return typeof value === 'string';
+}
+
+function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCaption, draft, bulkARN, subject, contactInfo, interests, includeParkingProjection, eventDetails, template) {
     return co(function*() {
-        if (config.verbose) {
-            console.log('processPromotionNotification');
+        if (fromAddress && interests && eventDetails && eventDetails.length > 0 && template) {
+            if (config.verbose) {
+                console.log('processPromotionNotification');
+            }
+            
+            var details = {};
+            
+            if (eventDetails.length >= 1) {
+                var eventDetail = eventDetails[0];
+                if (eventDetail) {
+                    details.eventTitle1 = eventDetail.title;
+                    details.eventDescription1 = eventDetail.description;
+                    var _event1 = db.child('events/' + eventDetail.id);
+                    var event1 = yield _event1.get();
+                    if (event1) {
+                        if (event1.largest) {
+                            details.image1 = event1.largest;
+                        }
+                        if (event1.startDate) {
+                            details.eventDateTime1 = formatTime(event1.startDate, 'MM/DD/YY @ h:mm A');
+                        }
+                    }
+                    details.eventLink1 = linkRoot + "/event/" + eventDetail.id;
+                }
+            }
+            if (eventDetails.length >= 2) {
+                var eventDetail = eventDetails[1];
+                if (eventDetail) {
+                    details.eventTitle2 = eventDetail.title;
+                    details.eventDescription2 = eventDetail.description;
+                    var _event2 = db.child('events/' + eventDetail.id);
+                    var event2 = yield _event2.get();
+                    if (event2) {
+                        if (event2.largest) {
+                            details.image2 = event2.largest;
+                        }
+                        if (event2.startDate) {
+                            details.eventDateTime2 = formatTime(event2.startDate, 'MM/DD/YY @ h:mm A');
+                        }
+                    }
+                    details.eventLink2 = linkRoot + "/event/" + eventDetail.id;
+                }
+            }
+            if (eventDetails.length >= 3) {
+                var eventDetail = eventDetails[2];
+                if (eventDetail) {
+                    details.eventTitle3 = eventDetail.title;
+                    details.eventDescription3 = eventDetail.description;
+                    var _event3 = db.child('events/' + eventDetail.id);
+                    var event3 = yield _event3.get();
+                    if (event3) {
+                        if (event3.largest) {
+                            details.image3 = event3.largest;
+                        }
+                        if (event3.startDate) {
+                            details.eventDateTime3 = formatTime(event3.startDate, 'MM/DD/YY @ h:mm A');
+                        }
+                    }
+                    details.eventLink3 = linkRoot + "/event/" + eventDetail.id;
+                }
+            }
+            if (eventDetails.length >= 4) {
+                var eventDetail = eventDetails[3];
+                if (eventDetail) {
+                    details.eventTitle4 = eventDetail.title;
+                    details.eventDescription4 = eventDetail.description;
+                    var _event4 = db.child('events/' + eventDetail.id);
+                    var event4 = yield _event4.get();
+                    if (event4) {
+                        if (event4.largest) {
+                            details.image4 = event4.largest;
+                        }
+                        if (event4.startDate) {
+                            details.eventDateTime4 = formatTime(event4.startDate, 'MM/DD/YY @ h:mm A');
+                        }
+                    }
+                    details.eventLink4 = linkRoot + "/event/" + eventDetail.id;
+                }
+            }
+            
+            if (linkRoot) {
+                details.parkingLink = linkRoot + "/parking";
+            }
+
+            if (contactInfo) {
+                details.contactInfo = contactInfo;
+            }
+            
+            if (specialCaption) {
+                details.specialCaption = specialCaption;
+            }
+            
+            if (config.verbose) {
+                console.log(details);
+                console.log(bulkARN);
+            }
+
+            var mark = require('markup-js');
+            
+            var message = {};
+            if (template) {
+                try {
+                    message.content = mark.up(template, details);
+                }
+                catch (e) {
+                    console.log(e);
+                }
+            }
+            
+            
+            
+            var _users = db.child("users");
+            var users = yield _users.get();
+            
+            if (users) {
+                var emails = {};
+                
+                for (var i = 0; i < interests.length; i++) {
+                    var _interestedUsers = db.child("userInterests/").orderByChild('interest').equalTo(interests[i]);
+                    var interestedUsers = yield _interestedUsers.get();
+                    if (interestedUsers) {
+                        var interestedUserKeys = Object.keys(interestedUsers);
+                        for (var j = 0; j < interestedUserKeys.length; j++) {
+                            var key = interestedUserKeys[j];
+                            var iu = interestedUsers[key].user;
+                            var user = users[iu];
+                            if (user && user.email) {
+                                emails[iu] = user.email;
+                            }
+                        }
+                    }
+                }
+                message.stage = stage;
+                message.emails = emails;
+                message.fromAddress = fromAddress;
+                message.subject = subject;
+                message.draft = draft;
+                
+                var payload = {
+                    default: JSON.stringify(message)
+                };
+                
+                yield publishSNS(bulkARN, payload, 'json');
+            }
+            else {
+                console.log("no users found");
+            }
         }
-        for (var i = 0; i < config.feedbackEmails.length; i++) {
-            var destEmail = config.feedbackEmails[i];
-            yield sendEmail(fromAddress, destEmail, title, null, description, null);
-        }
-    }).catch(onerror);
+
+    }).catch(function (err) {
+        console.log(err);
+    });
 };
+
+function formatTime(epoch, fmt) {
+    return moment(epoch).utcOffset(-8).format(fmt);
+}
 
 function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template) {
     return co(function*() {
@@ -429,6 +596,22 @@ function sendEmail(fromAddress, to, subject, content, message, attachment) {
             }
             if (config.verbose) {
                 console.log('email sent');
+            }
+            resolve();
+        });
+    });
+}
+
+function publishSNS(bulkARN, payload, messageStructure) {
+    return new Promise(function (resolve, reject) {
+        SNS.publish({
+            TopicArn: bulkARN,
+            Message: JSON.stringify(payload),
+            MessageStructure: 'json'
+        }, function (err, data) {
+            if (err) {
+                console.log(err);
+                reject(err);
             }
             resolve();
         });

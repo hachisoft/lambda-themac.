@@ -30,11 +30,10 @@ var config = {
         'msdedwards@hachisoft.com',
         'czoucha@themac.com'
     ],
+    "sendThreshold": 1200,
     "devBulkARN": "arn:aws:sns:us-west-2:172166497234:bulk_email",
     "prod2BulkARN": "arn:aws:sns:us-west-2:907623002484:bulk_email",
     "prodBulkARN": "arn:aws:sns:us-west-2:907623002484:bulk_email",
-    "devLinkRoot": "http://localhost:4200",
-    "prod2LinkRoot": "https://macdata-2.firebaseapp.com",
-    "prodLinkRoot": "https://sizzling-inferno-283.firebaseapp.com"
+    "production": false
 }
 module.exports = config
