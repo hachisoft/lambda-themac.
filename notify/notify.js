@@ -160,6 +160,29 @@ function isString(value) {
     return typeof value === 'string';
 }
 
+function setObjectAttribute(object, value, name, caps)
+{
+    if (object && value && name) {
+        if (caps) {
+            value = value.toUpperCase();
+        }
+        object[name] = value;
+    }
+}
+
+function getPPCSS(status)
+{
+    if (status === 'Low') {
+        return "fill: none; border-color: #8EC641;";
+    }
+    else if (status === 'Medium') {
+        return "background-image:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+DQogIDxsaW5lIHkyPSItMSIgeDI9IjEiIHkxPSIxIiB4MT0iLTEiIHN0cm9rZT0iI0ZCQjA0MSIgLz4NCiAgPGxpbmUgeTI9Ii0xIiB4Mj0iMTEiIHkxPSIxMSIgeDE9Ii0xIiBzdHJva2U9IiNGQkIwNDEiIC8+DQogIDxsaW5lIHkyPSI5IiB4Mj0iMTEiIHkxPSIxMSIgeDE9IjkiIHN0cm9rZT0iI0ZCQjA0MSIgLz4NCjwvc3ZnPg==); background-repeat:repeat; border-color:#FBB041;";
+    }
+    else {
+        return "background-image:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+DQogIDxsaW5lIHkyPSItMSIgeDI9IjEiIHkxPSIxIiB4MT0iLTEiIHN0cm9rZT0iI0NGMEEyQyIgLz4NCiAgPGxpbmUgeTI9Ii0xIiB4Mj0iMTEiIHkxPSIxMSIgeDE9Ii0xIiBzdHJva2U9IiNDRjBBMkMiIC8+DQogIDxsaW5lIHkyPSItMSIgeDI9IjYiIHkxPSI2IiB4MT0iLTEiIHN0cm9rZT0iI0NGMEEyQyIgLz4NCiAgPGxpbmUgeTI9IjkiIHgyPSIxMSIgeTE9IjExIiB4MT0iOSIgc3Ryb2tlPSIjQ0YwQTJDIiAvPg0KICA8bGluZSB5Mj0iNCIgeDI9IjExIiB5MT0iMTEiIHgxPSI0IiBzdHJva2U9IiNDRjBBMkMiIC8+DQo8L3N2Zz4=); background-repeat: repeat; border-color: #CF0A2C;";
+    }
+}
+
 function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCaption, draft, bulkARN, subject, contactInfo, interests, includeParkingProjection, eventDetails, template) {
     return co(function*() {
         if (fromAddress && interests && eventDetails && eventDetails.length > 0 && template) {
@@ -169,6 +192,30 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
             
             var details = {};
             
+            if (includeParkingProjection) {
+                var today = moment();
+                var sunday = today.startOf('week').valueOf();
+                var saturday = today.endOf('week').valueOf();
+                var _parkingProjections = db.child("parkingProjections/").orderByChild('date').startAt(sunday).endAt(saturday);
+                var parkingProjections = yield _parkingProjections.get();
+                if (parkingProjections) {
+                    var ppKeys = Object.keys(parkingProjections);
+                    for (var l = 0; l < ppKeys.length; l++) {
+                        var key = ppKeys[l];
+                        var pp = parkingProjections[key];
+                        if (pp) {
+                            setObjectAttribute(details, formatTime(pp.date, "DD"), "day" + l + "text", false);
+                            setObjectAttribute(details, formatTime(pp.date, "MMM"), "day" + l + "month", true);
+                            setObjectAttribute(details, formatTime(pp.date, "ddd"), "day" + l, true);
+                            setObjectAttribute(details, getPPCSS(pp.statusEarly), "day" + l + "am", false);
+                            setObjectAttribute(details, getPPCSS(pp.statusMidDay), "day" + l + "md", false);
+                            setObjectAttribute(details, getPPCSS(pp.statusLate), "day" + l + "pm", false);
+                        }
+                    }
+                    details.parkingForecast = true;
+                }
+            }
+
             if (eventDetails.length >= 1) {
                 var eventDetail = eventDetails[0];
                 if (eventDetail) {
