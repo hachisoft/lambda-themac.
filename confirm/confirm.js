@@ -3,7 +3,7 @@ var aws = require('aws-sdk');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
 var co = require('co');
-var moment = require('moment');
+var moment = require('moment-timezone');
 var momentRange = require('moment-range');
 var serverTimeOffset = 0;
 
@@ -202,7 +202,7 @@ exports.handler = function (params, context) {
 
 function formatTime(epoch, fmt)
 {
-    return moment(epoch).utcOffset(-8).format(fmt);
+    return moment(epoch).tz('America/Los_Angeles').format(fmt);
 }
 
 function formatRange(range, fmt)

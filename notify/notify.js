@@ -3,7 +3,8 @@ var aws = require('aws-sdk');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
 var co = require('co');
-var moment = require('moment');
+var moment = require('moment-timezone');
+
 var thunkify = require('thunkify');
 var config = require('./config.js');
 var util = require('util');
@@ -228,7 +229,7 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, 
                             details.image1 = event1.largest;
                         }
                         if (event1.startDate && event1.endDate) {
-                            details.eventDay1 = formatTime(event1.startDate, 'dddd MMM. d');
+                            details.eventDay1 = formatTime(event1.startDate, 'dddd MMM. D');
                             details.eventDateTime1 = formatRange(event1.startDate,event1.endDate, 'h:mm A');
                         }
                     }
@@ -247,7 +248,7 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, 
                             details.image2 = event2.largest;
                         }
                         if (event1.startDate && event1.endDate) {
-                            details.eventDay2 = formatTime(event2.startDate, 'dddd MMM. d');
+                            details.eventDay2 = formatTime(event2.startDate, 'dddd MMM. D');
                             details.eventDateTime2 = formatRange(event2.startDate, event2.endDate, 'h:mm A');
                         }
                     }
@@ -266,7 +267,7 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, 
                             details.image3 = event3.largest;
                         }
                         if (event3.startDate && event3.endDate) {
-                            details.eventDay3 = formatTime(event3.startDate, 'dddd MMM. d');
+                            details.eventDay3 = formatTime(event3.startDate, 'dddd MMM. D');
                             details.eventDateTime3 = formatRange(event3.startDate, event3.endDate, 'h:mm A');
                         }
                     }
@@ -285,7 +286,7 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, 
                             details.image4 = event4.largest;
                         }
                         if (event4.startDate && event4.endDate) {
-                            details.eventDay4 = formatTime(event4.startDate, 'dddd MMM. d');
+                            details.eventDay4 = formatTime(event4.startDate, 'dddd MMM. D');
                             details.eventDateTime4 = formatRange(event4.startDate, event4.endDate, 'h:mm A');
                         }
                     }
@@ -370,7 +371,7 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, 
 };
 
 function formatTime(epoch, fmt) {
-    return moment(epoch).utcOffset(-8).format(fmt);
+    return moment(epoch).tz('America/Los_Angeles').format(fmt);
 }
 
 function formatRange(start, end, fmt) {
