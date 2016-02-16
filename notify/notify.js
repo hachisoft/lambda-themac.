@@ -140,7 +140,7 @@ exports.handler = function (params, context) {
                         }
                         else if (params.type === 'notifyPromotion') {
 
-                            yield processPromotionNotification(db, fromAddress, stage, linkRoot, params.specialCaption, params.draft, bulkARN, params.subject, params.contactInfo, params.interests, params.includeParkingProjection, params.eventDetails, templateBody);
+                            yield processPromotionNotification(db, fromAddress, stage, linkRoot, bulkARN, params.specialHeader, params.draft, params.additionalInformation, params.subject, params.contactInfo, params.interests, params.includeParkingProjection, params.eventDetails, templateBody);
                         }
                         context.succeed({});
                     }).catch(onerror);
@@ -183,7 +183,7 @@ function getPPCSS(status)
     }
 }
 
-function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCaption, draft, bulkARN, subject, contactInfo, interests, includeParkingProjection, eventDetails, template) {
+function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, specialCaption, draft, additionalInfo, subject, contactInfo, interests, includeParkingProjection, eventDetails, template) {
     return co(function*() {
         if (fromAddress && interests && eventDetails && eventDetails.length > 0 && template) {
             if (config.verbose) {
@@ -227,8 +227,9 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
                         if (event1.largest) {
                             details.image1 = event1.largest;
                         }
-                        if (event1.startDate) {
-                            details.eventDateTime1 = formatTime(event1.startDate, 'MM/DD/YY @ h:mm A');
+                        if (event1.startDate && event1.endDate) {
+                            details.eventDay1 = formatTime(event1.startDate, 'dddd MMM. d');
+                            details.eventDateTime1 = formatRange(event1.startDate,event1.endDate, 'h:mm A');
                         }
                     }
                     details.eventLink1 = linkRoot + "/event/" + eventDetail.id;
@@ -245,8 +246,9 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
                         if (event2.largest) {
                             details.image2 = event2.largest;
                         }
-                        if (event2.startDate) {
-                            details.eventDateTime2 = formatTime(event2.startDate, 'MM/DD/YY @ h:mm A');
+                        if (event1.startDate && event1.endDate) {
+                            details.eventDay2 = formatTime(event2.startDate, 'dddd MMM. d');
+                            details.eventDateTime2 = formatRange(event2.startDate, event2.endDate, 'h:mm A');
                         }
                     }
                     details.eventLink2 = linkRoot + "/event/" + eventDetail.id;
@@ -263,8 +265,9 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
                         if (event3.largest) {
                             details.image3 = event3.largest;
                         }
-                        if (event3.startDate) {
-                            details.eventDateTime3 = formatTime(event3.startDate, 'MM/DD/YY @ h:mm A');
+                        if (event3.startDate && event3.endDate) {
+                            details.eventDay3 = formatTime(event3.startDate, 'dddd MMM. d');
+                            details.eventDateTime3 = formatRange(event3.startDate, event3.endDate, 'h:mm A');
                         }
                     }
                     details.eventLink3 = linkRoot + "/event/" + eventDetail.id;
@@ -281,8 +284,9 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
                         if (event4.largest) {
                             details.image4 = event4.largest;
                         }
-                        if (event4.startDate) {
-                            details.eventDateTime4 = formatTime(event4.startDate, 'MM/DD/YY @ h:mm A');
+                        if (event4.startDate && event4.endDate) {
+                            details.eventDay4 = formatTime(event4.startDate, 'dddd MMM. d');
+                            details.eventDateTime4 = formatRange(event4.startDate, event4.endDate, 'h:mm A');
                         }
                     }
                     details.eventLink4 = linkRoot + "/event/" + eventDetail.id;
@@ -295,6 +299,10 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
 
             if (contactInfo) {
                 details.contactInfo = contactInfo;
+            }
+            
+            if (additionalInfo) {
+                details.additionalInfo = additionalInfo;
             }
             
             if (specialCaption) {
@@ -317,8 +325,6 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
                     console.log(e);
                 }
             }
-            
-            
             
             var _users = db.child("users");
             var users = yield _users.get();
@@ -365,6 +371,12 @@ function processPromotionNotification(db, fromAddress,stage, linkRoot, specialCa
 
 function formatTime(epoch, fmt) {
     return moment(epoch).utcOffset(-8).format(fmt);
+}
+
+function formatRange(start, end, fmt) {
+    var from = formatTime(start, fmt);
+    var to = formatTime(end, fmt);
+    return from + ' - ' + to;
 }
 
 function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template) {

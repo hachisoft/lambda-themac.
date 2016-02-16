@@ -8,7 +8,10 @@
   "includeParkingProjection":  true,
   "eventDetails": [
     {
-      "id":  "-KA5xuJ2PE4J1XCT9AOx","title": "Test Title","description": "Test Description"
+      "id": "-KA5xuJ2PE4J1XCT9AOx",
+      "title": "Test Title",
+      "description": "Test Description"
     }
-  ]
+  ],
+  "additionalInfo":  "Some long winded explanation"
 }

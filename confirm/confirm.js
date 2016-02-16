@@ -1556,6 +1556,11 @@ function AddError(errors, err)
     }
 }
 
+function getFirebasePath(root, path)
+{
+    return path.replace(root, '');
+}
+
 function updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
     if (config.verbose) {
         console.log('updateRegistration:'+verb);
@@ -1563,7 +1568,7 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
     return co(function*() {
         var atomicWrite = {};
         var promises = [];
-        var _auditRegistrations = db.child('auditRegistrations')
+        var _auditRegistrations = db.child('auditRegistrations');
         var auditEntry = {
             'verb': verb,
             'timestamp': moment().valueOf(),
@@ -1609,39 +1614,48 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
                             delete user.registrations[registration_id];
                         }
                     }
-                    atomicWrite[_user.toString()] = user;
+                    atomicWrite[getFirebasePath(_user.root(),_user.toString())] = user;
                 }
                 else {
                     if (registration.registeringUser) {
                         if (registeringUser && registeringUser.createdRegistrations) {
                             delete registeringUser.createdRegistrations[registration_id];
-                            atomicWrite[_registeringUser.toString()] = registeringUser;
+                            atomicWrite[getFirebasePath(_registeringUser.root(),_registeringUser.toString())] = registeringUser;
                         }
                     }
                     if (registration.registeredUser) {
                         if (registeredUser && registeredUser.registrations) {
                             delete registeredUser.registrations[registration_id];
-                            atomicWrite[_registeredUser.toString()] = registeredUser;
+                            atomicWrite[getFirebasePath(_registeredUser.root(),_registeredUser.toString())] = registeredUser;
                         }
                     }
                 }
                 if (registration.fee) {
                     if (fee && fee.registrations) {
                         delete fee.registrations[registration_id];
-                        atomicWrite[_fee.toString()] = fee;
+                        atomicWrite[getFirebasePath(_fee.root(),_fee.toString())] = fee;
                     }
                 }
                 if (registration.event) {
                     if (event){
                         if (event.registrations) {
                             delete event.registrations[registration_id];
-                            atomicWrite[_event.toString()] = event;
+                            atomicWrite[getFirebasePath(_event.root(),_event.toString())] = event;
                         }
-                        if (event.interest) {
-                            var _interest = db.child('interests/' + event.interest);
-                            var interest = yield _interest.get();
-                            if (interest) {
-                                interestName = interest.name;
+                        if (event.interests) {
+                            var interestKeys = Object.keys(event.interests);
+                            for (var i = 0; i < interestKeys.length; i++) {
+                                var key = interestKeys[i];
+                                var _interest = db.child('interests/' + key);
+                                var interest = yield _interest.get();
+                                if (interest) {
+                                    if (interestName) {
+                                        interestName += interest.name || '';
+                                    }
+                                    else {
+                                        interestName = interest.name || '';
+                                    }
+                                }
                             }
                         }
 
