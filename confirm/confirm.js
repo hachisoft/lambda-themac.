@@ -385,8 +385,10 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
                 reservation.status = "Cancelled";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
-                yield updateReservation(errors, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
                 var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket,fromAddress);
+                
+                yield updateReservation(errors, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                
                 //send each person on the confirmation their conf
                 if (details) {
                     yield sendConfirmation(errors, db, reservationUser, reservation.reservationUser, details, fromAddress);
@@ -1837,8 +1839,8 @@ function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
                 var notification = {
                     type: 'Confirmation',
                     timestamp: moment().valueOf(),
-                    title: details.eventName,
-                    description: details.eventDescription,
+                    title: details.confirmationNotificationTitle,
+                    description: details.confirmationNotificationDescription,
                     user: user_id
                 };
                 yield _notification.set(notification);
@@ -1907,6 +1909,11 @@ function download(url) {
     });
 }
 
+function addLine(text, line)
+{
+    return text + (line + "<br>");
+}
+
 function buildConfirmation(errors, verb, db, user, user_id, event, registration, reservation, confirmation, location, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress) {
     if (config.verbose) {
         console.log("buildConfirmation");
@@ -1916,6 +1923,8 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         
         var template = null;
         var subject = "";
+        var confirmationNotificationTitle = "";
+        var confirmationNotificationDescription = "";
         if (confirmation) {
             if (confirmation.confirmationTemplate) {
                 if (verb === 'Register') {
@@ -2004,16 +2013,33 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         var reservationStartTime = '';
         var reservationAsset = null;
         var sessions = [];
+        if (verb === 'Register') {
+            confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Registered</strong><br>");
+        }
+        else if (verb === 'Reserve') {
+            confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Reserved</strong><br>");
+        }
+        else if (verb === 'Cancel') {
+            confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Cancelled</strong><br>");
+        }
+        else if (verb === 'Waitlist') {
+            confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Waitlisted</strong><br>");
+        }
+        else if (verb === 'WaitlistModified') {
+            confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Waitlist Changed</strong><br>");
+        }
+
         if (event) {
             cancelBy = formatTime(event.cancelBy,'MMM Do h:mm a');
             eventName = event.title;
             eventNumber = event.number;
+            confirmationNotificationTitle = eventName + " - " + eventNumber;
             
             if (cal) {
                 cal.setName(eventName);
             }
 
-            eventDate = formatTime(event.startDate,'MMM Do');
+            eventDate = formatTime(event.startDate, 'MMM Do');
             eventDescription = event.description;
             if (event.sessions) {
                 for (var propertyName in event.sessions) {
@@ -2058,13 +2084,33 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
                 }
             }
         }
-        
+        if (eventDate) {
+            confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Date:</strong> "+eventDate);
+        }
+           
+        if (sessions && sessions.length) {
+            confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Sessions</strong>");
+            for (var i = 0; i < sessions.length; i++) {
+                var s = sessions[i];
+                confirmationNotificationDescription = addLine(confirmationNotificationDescription, s.date + ": " + s.startTime + " - " + s.endTime);
+            }
+            confirmationNotificationDescription += "<br>";
+        }
+
+        if (eventDescription) {
+            confirmationNotificationDescription = addLine(confirmationNotificationDescription, eventDescription);
+        }
+
         var comments = '';
         if (registration) {
             comments = registration.comments;
         }
             
         if (reservation) {
+            
+            eventName = location + " Reservation";
+            confirmationNotificationTitle = eventName;
+
             if (reservation.asset) {
                 var _a = db.child('reservationAssets/' + reservation.asset);
                 var asset = yield _a.get();
@@ -2077,7 +2123,7 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             if (session) {
                 
                 if (cal) {
-                    eventName = location + " Reservation";
+                    
                     cal.setName(eventName);
                     var ce = cal.createEvent({
                         start: moment(session.date).toDate(),
@@ -2098,8 +2144,10 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
                         });
                     }
                 }
-                reservationDate = formatTime(session.date,'MMM Do');
-                reservationStartTime = formatTime(session.date,'h:mm a');
+                reservationDate = formatTime(session.date, 'dddd MMM. D');
+                confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Date:</strong> "+reservationDate);
+                reservationStartTime = formatTime(session.date, 'h:mm a');
+                confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Time:</strong> " +reservationStartTime);
             }
         }
         var attachment = null;
@@ -2110,6 +2158,11 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             };
             cal?cal.toString():null
         }
+        
+        if (reservationAsset) {
+            confirmationNotificationDescription= addLine(confirmationNotificationDescription, reservationAsset);
+        }
+        
         var details = {
             memberName: user?user.fullName:'',
             user_id: user_id || '',
@@ -2130,6 +2183,8 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             location: location,
             attachment: attachment,
             subject: subject,
+            confirmationNotificationTitle: confirmationNotificationTitle,
+            confirmationNotificationDescription: confirmationNotificationDescription
         };
         
         if (reservationAsset) {
