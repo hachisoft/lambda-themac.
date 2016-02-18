@@ -315,14 +315,14 @@ function processReservation(errors,verb, db, context, _reservation, reservation,
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
                 yield updateReservation(errors,verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
-                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                 //send each person on the confirmation their conf
                 if (details) {
                     yield sendConfirmation(errors, db, reservationUser, reservation.reservationUser, details, fromAddress);
                 }
                 
                 if (!primaryMemberConfirmation) { //now send one to the reserving user also
-                    details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
+                    details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
                         yield sendConfirmation(errors, db, reservingUser, reservation.reservingUser, details, fromAddress);
@@ -385,7 +385,7 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
                 reservation.status = "Cancelled";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
-                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket,fromAddress);
+                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket,fromAddress);
                 
                 yield updateReservation(errors, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
                 
@@ -395,7 +395,7 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
                 }
                 
                 if (!primaryMemberConfirmation) { //now send one to the reserving user also
-                    details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, reservation, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
+                    details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
                         yield sendConfirmation(errors, db, reservingUser, reservation.reservingUser, details, fromAddress);
@@ -633,7 +633,7 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
                 if (event) {
                     if (event.sendMemberNotifications) {
                         if (registeredUser) {
-                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
                                 yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
@@ -641,7 +641,7 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
                         }
                         
                         if (!primaryMemberConfirmation) { //now send one to the registering user also
-                            details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                            details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
                                 yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
@@ -650,7 +650,7 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
                     }
                     if (event.sendStaffNotifications) {
                         if (isAdmin(cancellingUser) && registeredUser && cancellingUser_id !== registration.registeringUser) {
-                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
                                 yield sendConfirmation(errors, db, cancellingUser, cancellingUser_id, details, fromAddress);
@@ -1086,7 +1086,7 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                 yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
                 if (registeredUser && event.sendMemberNotifications) {
-                    var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                    var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
                         yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
@@ -1095,7 +1095,7 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
                         
                 if (!primaryMemberConfirmation) { //now send one to the registering user also
                     if ((isAdmin(registeringUser) && event.sendStaffNotifications) || event.sendMemberNotifications){
-                        details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                        details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                         //send each person on the confirmation their conf
                         if (details) {
                             yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
@@ -1843,6 +1843,12 @@ function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
                     description: details.confirmationNotificationDescription,
                     user: user_id
                 };
+                
+                if (details.linkTo && details.identifier) {
+                    notification.linkTo = details.linkTo;
+                    notification.identifier = details.identifier;
+                }
+
                 yield _notification.set(notification);
             }
             
@@ -1914,7 +1920,7 @@ function addLine(text, line)
     return text + (line + "<br>");
 }
 
-function buildConfirmation(errors, verb, db, user, user_id, event, registration, reservation, confirmation, location, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress) {
+function buildConfirmation(errors, verb, db, user, user_id, event, event_id, registration, reservation, reservation_id, confirmation, location, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress) {
     if (config.verbose) {
         console.log("buildConfirmation");
     }
@@ -2012,20 +2018,38 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
         var reservationDate = '';
         var reservationStartTime = '';
         var reservationAsset = null;
+        var linkTo = null;
+        var identifier = null;
         var sessions = [];
         if (verb === 'Register') {
+            if (event_id) {
+                linkTo = "event";
+                identifier = event_id;
+            }
             confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Registered</strong><br>");
         }
         else if (verb === 'Reserve') {
+            if (reservation_id) {
+                linkTo = "edit.reservation";
+                identifier = reservation_id;
+            }
             confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Reserved</strong><br>");
         }
         else if (verb === 'Cancel') {
             confirmationNotificationDescription=addLine(confirmationNotificationDescription, "<strong>Cancelled</strong><br>");
         }
         else if (verb === 'Waitlist') {
+            if (event_id) {
+                linkTo = "event";
+                identifier = event_id;
+            }
             confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Waitlisted</strong><br>");
         }
         else if (verb === 'WaitlistModified') {
+            if (event_id) {
+                linkTo = "event";
+                identifier = event_id;
+            }
             confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Waitlist Changed</strong><br>");
         }
 
@@ -2186,6 +2210,14 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             confirmationNotificationTitle: confirmationNotificationTitle,
             confirmationNotificationDescription: confirmationNotificationDescription
         };
+        
+        if (linkTo) {
+            details.linkTo = linkTo;
+        }
+        
+        if (identifier) {
+            details.identifier = identifier;
+        }
         
         if (reservationAsset) {
             details.reservationAsset = reservationAsset;
