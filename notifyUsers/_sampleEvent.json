@@ -1,0 +1,11 @@
+﻿{
+  "Records": [
+    {
+      "Sns": {
+        "Message": {
+          "stage": "v0", "verb": "notifyPromotion", "notifyRequest":  { "stage": "v0", "type": "notifyPromotion", "subject": "Firsta", "contactInfo": "Contact CZ", "draft": "tedwards@hachisoft.com", "includeParkingProjection": true, "eventDetails":  [ { "title": "Water Polo", "description": "Players (ages 6 to 12) learn the basic skills and understanding of water polo in a recreational format. The class is conducted mostly in the 4-ft. shallow end. Floatation devices may be used to assist players. Players pass and swim with a water polo ball, and learn egg beater for treading water and how to work as a team. This class is mainly designed for fun and fitness. Participants need to have reached level 4 in the MAC swim lesson program. Members - $18.75", "id": " -KALQGWm7QlWLR4ycLng" } ], "interests": [ "-KAM6-RTbe5td-RicFrv" ], "additionalInformation": "Addl info", "specialHeader": "MACtivities for February 19th" }, "linkRoot": "https://sizzling-inferno-283.firebaseapp.com", "fromAddress": "MAC <webmaster@themac.com>", "templateBucket": "themac.email.templates", "templateName": "promotion1.html"
+        }
+      }
+    }
+  ]
+}

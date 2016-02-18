@@ -51,14 +51,14 @@ exports.handler = function (params, context) {
         var firebaseUrl = null;
         var authToken = null;
         var templateBucket = '';
-        var bulkARN = null;
+        var notifyUsersARN = null;
         var linkRoot = null;
         if (stage === 'v0') {
             templateBucket = config.prodTemplateBucket;
             authToken = config.prodSecret;
             firebaseUrl = config.prodFirebaseUrl;
             fromAddress = config.prodFromAddress;
-            bulkARN = config.prodBulkARN;
+            notifyUsersARN = config.prodNotifyUsersARN;
             linkRoot = config.prodLinkRoot;
         }
         else if (stage === 'v0_2') {
@@ -66,7 +66,7 @@ exports.handler = function (params, context) {
             authToken = config.prod2Secret;
             firebaseUrl = config.prod2FirebaseUrl;
             fromAddress = config.prodFromAddress;
-            bulkARN = config.prod2BulkARN;
+            notifyUsersARN = config.prod2NotifyUsersARN;
             linkRoot = config.prod2LinkRoot;
         }
         else {
@@ -74,7 +74,7 @@ exports.handler = function (params, context) {
             authToken = config.devSecret;
             firebaseUrl = config.devFirebaseUrl;
             fromAddress = config.fromAddress;
-            bulkARN = config.devBulkARN;
+            notifyUsersARN = config.devNotifyUsersARN;
             linkRoot = config.devLinkRoot;
         }
         
@@ -104,49 +104,61 @@ exports.handler = function (params, context) {
                 console.log('Auth succeeded');
                 console.log({'templateBucket':templateBucket,'templateName':templateName});
             }
-            
-            s3.getObject({
-                Bucket: templateBucket, 
-                Key: templateName
-            }, function (err, template) {
-                if (err) {
-                    if (config.verbose) {
-                        console.log(err, err.stack); // an error occurred
-                    }
-                    context.fail(err.stack);
-                }
-                else {
-                    co(function*() {
+            co(function*() {
+                if (params.type === 'interest') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
                         var templateBody = template.Body.toString();
-                        if (params.type === 'interest') {
-                            yield processInterestNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'event') {
-                            yield processEventNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'user') {
-                            yield processUserNotification(db, params.id, result, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'closure') {
-                            yield processClosureNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'emergency') {
-                            yield processEmergencyNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'feedback') {
-                            yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'childcare') {
-                            yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                        }
-                        else if (params.type === 'notifyPromotion') {
-
-                            yield processPromotionNotification(db, fromAddress, stage, linkRoot, bulkARN, params.specialHeader, params.draft, params.additionalInformation, params.subject, params.contactInfo, params.interests, params.includeParkingProjection, params.eventDetails, templateBody);
-                        }
-                        context.succeed({});
-                    }).catch(onerror);
+                        yield processInterestNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
                 }
-            });
+                else if (params.type === 'event') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processEventNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'user') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processUserNotification(db, params.id, result, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'closure') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processClosureNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'emergency') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processEmergencyNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'feedback') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'childcare') {
+                    var template = yield getS3Object(templateBucket, templateName);
+                    if (template) {
+                        var templateBody = template.Body.toString();
+                        yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                    }
+                }
+                else if (params.type === 'notifyPromotion') {
+                    yield processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                }
+                context.succeed({});
+            }).catch(onerror);
         });
     }
     else {
@@ -171,199 +183,25 @@ function setObjectAttribute(object, value, name, caps)
     }
 }
 
-function getPPCSS(status)
-{
-    if (status === 'Low') {
-        return "fill: none; border-color: #8EC641;";
-    }
-    else if (status === 'Medium') {
-        return "background-image:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+DQogIDxsaW5lIHkyPSItMSIgeDI9IjEiIHkxPSIxIiB4MT0iLTEiIHN0cm9rZT0iI0ZCQjA0MSIgLz4NCiAgPGxpbmUgeTI9Ii0xIiB4Mj0iMTEiIHkxPSIxMSIgeDE9Ii0xIiBzdHJva2U9IiNGQkIwNDEiIC8+DQogIDxsaW5lIHkyPSI5IiB4Mj0iMTEiIHkxPSIxMSIgeDE9IjkiIHN0cm9rZT0iI0ZCQjA0MSIgLz4NCjwvc3ZnPg==); background-repeat:repeat; border-color:#FBB041;";
-    }
-    else {
-        return "background-image:url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScxMCcgaGVpZ2h0PScxMCc+DQogIDxsaW5lIHkyPSItMSIgeDI9IjEiIHkxPSIxIiB4MT0iLTEiIHN0cm9rZT0iI0NGMEEyQyIgLz4NCiAgPGxpbmUgeTI9Ii0xIiB4Mj0iMTEiIHkxPSIxMSIgeDE9Ii0xIiBzdHJva2U9IiNDRjBBMkMiIC8+DQogIDxsaW5lIHkyPSItMSIgeDI9IjYiIHkxPSI2IiB4MT0iLTEiIHN0cm9rZT0iI0NGMEEyQyIgLz4NCiAgPGxpbmUgeTI9IjkiIHgyPSIxMSIgeTE9IjExIiB4MT0iOSIgc3Ryb2tlPSIjQ0YwQTJDIiAvPg0KICA8bGluZSB5Mj0iNCIgeDI9IjExIiB5MT0iMTEiIHgxPSI0IiBzdHJva2U9IiNDRjBBMkMiIC8+DQo8L3N2Zz4=); background-repeat: repeat; border-color: #CF0A2C;";
-    }
-}
-
-function processPromotionNotification(db, fromAddress,stage, linkRoot, bulkARN, specialCaption, draft, additionalInfo, subject, contactInfo, interests, includeParkingProjection, eventDetails, template) {
+function processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName) {
     return co(function*() {
-        if (fromAddress && interests && eventDetails && eventDetails.length > 0 && template) {
-            if (config.verbose) {
-                console.log('processPromotionNotification');
-            }
-            
-            var details = {};
-            
-            if (includeParkingProjection) {
-                var today = moment();
-                var sunday = today.startOf('week').valueOf();
-                var saturday = today.endOf('week').valueOf();
-                var _parkingProjections = db.child("parkingProjections/").orderByChild('date').startAt(sunday).endAt(saturday);
-                var parkingProjections = yield _parkingProjections.get();
-                if (parkingProjections) {
-                    var ppKeys = Object.keys(parkingProjections);
-                    for (var l = 0; l < ppKeys.length; l++) {
-                        var key = ppKeys[l];
-                        var pp = parkingProjections[key];
-                        if (pp) {
-                            setObjectAttribute(details, formatTime(pp.date, "DD"), "day" + l + "text", false);
-                            setObjectAttribute(details, formatTime(pp.date, "MMM"), "day" + l + "month", true);
-                            setObjectAttribute(details, formatTime(pp.date, "ddd"), "day" + l, true);
-                            setObjectAttribute(details, getPPCSS(pp.statusEarly), "day" + l + "am", false);
-                            setObjectAttribute(details, getPPCSS(pp.statusMidDay), "day" + l + "md", false);
-                            setObjectAttribute(details, getPPCSS(pp.statusLate), "day" + l + "pm", false);
-                        }
-                    }
-                    details.parkingForecast = true;
-                }
-            }
-
-            if (eventDetails.length >= 1) {
-                var eventDetail = eventDetails[0];
-                if (eventDetail) {
-                    details.eventTitle1 = eventDetail.title;
-                    details.eventDescription1 = eventDetail.description;
-                    var _event1 = db.child('events/' + eventDetail.id);
-                    var event1 = yield _event1.get();
-                    if (event1) {
-                        if (event1.largest) {
-                            details.image1 = event1.largest;
-                        }
-                        if (event1.startDate && event1.endDate) {
-                            details.eventDay1 = formatTime(event1.startDate, 'dddd MMM. D');
-                            details.eventDateTime1 = formatRange(event1.startDate,event1.endDate, 'h:mm A');
-                        }
-                    }
-                    details.eventLink1 = linkRoot + "/event/" + eventDetail.id;
-                }
-            }
-            if (eventDetails.length >= 2) {
-                var eventDetail = eventDetails[1];
-                if (eventDetail) {
-                    details.eventTitle2 = eventDetail.title;
-                    details.eventDescription2 = eventDetail.description;
-                    var _event2 = db.child('events/' + eventDetail.id);
-                    var event2 = yield _event2.get();
-                    if (event2) {
-                        if (event2.largest) {
-                            details.image2 = event2.largest;
-                        }
-                        if (event1.startDate && event1.endDate) {
-                            details.eventDay2 = formatTime(event2.startDate, 'dddd MMM. D');
-                            details.eventDateTime2 = formatRange(event2.startDate, event2.endDate, 'h:mm A');
-                        }
-                    }
-                    details.eventLink2 = linkRoot + "/event/" + eventDetail.id;
-                }
-            }
-            if (eventDetails.length >= 3) {
-                var eventDetail = eventDetails[2];
-                if (eventDetail) {
-                    details.eventTitle3 = eventDetail.title;
-                    details.eventDescription3 = eventDetail.description;
-                    var _event3 = db.child('events/' + eventDetail.id);
-                    var event3 = yield _event3.get();
-                    if (event3) {
-                        if (event3.largest) {
-                            details.image3 = event3.largest;
-                        }
-                        if (event3.startDate && event3.endDate) {
-                            details.eventDay3 = formatTime(event3.startDate, 'dddd MMM. D');
-                            details.eventDateTime3 = formatRange(event3.startDate, event3.endDate, 'h:mm A');
-                        }
-                    }
-                    details.eventLink3 = linkRoot + "/event/" + eventDetail.id;
-                }
-            }
-            if (eventDetails.length >= 4) {
-                var eventDetail = eventDetails[3];
-                if (eventDetail) {
-                    details.eventTitle4 = eventDetail.title;
-                    details.eventDescription4 = eventDetail.description;
-                    var _event4 = db.child('events/' + eventDetail.id);
-                    var event4 = yield _event4.get();
-                    if (event4) {
-                        if (event4.largest) {
-                            details.image4 = event4.largest;
-                        }
-                        if (event4.startDate && event4.endDate) {
-                            details.eventDay4 = formatTime(event4.startDate, 'dddd MMM. D');
-                            details.eventDateTime4 = formatRange(event4.startDate, event4.endDate, 'h:mm A');
-                        }
-                    }
-                    details.eventLink4 = linkRoot + "/event/" + eventDetail.id;
-                }
-            }
-            
-            if (linkRoot) {
-                details.parkingLink = linkRoot + "/parking";
-            }
-
-            if (contactInfo) {
-                details.contactInfo = contactInfo;
-            }
-            
-            if (additionalInfo) {
-                details.additionalInfo = additionalInfo;
-            }
-            
-            if (specialCaption) {
-                details.specialCaption = specialCaption;
-            }
-            
-            if (config.verbose) {
-                console.log(details);
-                console.log(bulkARN);
-            }
-
-            var mark = require('markup-js');
-            
-            var message = {};
-            if (template) {
-                try {
-                    message.content = mark.up(template, details);
-                }
-                catch (e) {
-                    console.log(e);
-                }
-            }
-            
-            var _users = db.child("users");
-            var users = yield _users.get();
-            
-            if (users) {
-                var emails = {};
-                
-                for (var i = 0; i < interests.length; i++) {
-                    var _interestedUsers = db.child("userInterests/").orderByChild('interest').equalTo(interests[i]);
-                    var interestedUsers = yield _interestedUsers.get();
-                    if (interestedUsers) {
-                        var interestedUserKeys = Object.keys(interestedUsers);
-                        for (var j = 0; j < interestedUserKeys.length; j++) {
-                            var key = interestedUserKeys[j];
-                            var iu = interestedUsers[key].user;
-                            var user = users[iu];
-                            if (user && user.email) {
-                                emails[iu] = user.email;
-                            }
-                        }
-                    }
-                }
-                message.stage = stage;
-                message.emails = emails;
-                message.fromAddress = fromAddress;
-                message.subject = subject;
-                message.draft = draft;
-                
-                var payload = {
-                    default: JSON.stringify(message)
-                };
-                
-                yield publishSNS(bulkARN, payload, 'json');
-            }
-            else {
-                console.log("no users found");
-            }
+        if (config.verbose) {
+            console.log('processPromotionNotification');
         }
+        var message = {};    
+        message.verb = 'notifyPromotion';
+        message.stage = stage;
+        message.notifyRequest = params;
+        message.linkRoot = linkRoot;
+        message.fromAddress = fromAddress;
+        message.templateBucket = templateBucket;
+        message.templateName = templateName;
+                
+        var payload = {
+            default: JSON.stringify(message)
+        };
+                
+        yield publishSNS(notifyUsersARN, payload, 'json');
 
     }).catch(function (err) {
         console.log(err);
@@ -662,10 +500,10 @@ function sendEmail(fromAddress, to, subject, content, message, attachment) {
     });
 }
 
-function publishSNS(bulkARN, payload, messageStructure) {
+function publishSNS(notifyUsersARN, payload, messageStructure) {
     return new Promise(function (resolve, reject) {
         SNS.publish({
-            TopicArn: bulkARN,
+            TopicArn: notifyUsersARN,
             Message: JSON.stringify(payload),
             MessageStructure: 'json'
         }, function (err, data) {
@@ -674,6 +512,26 @@ function publishSNS(bulkARN, payload, messageStructure) {
                 reject(err);
             }
             resolve();
+        });
+    });
+}
+
+function getS3Object(templateBucket, templateName)
+{
+    return new Promise(function (resolve, reject) {
+        s3.getObject({
+            Bucket: templateBucket, 
+            Key: templateName
+        }, function (err, template) {
+            if (err) {
+                if (config.verbose) {
+                    console.log(err, err.stack); // an error occurred
+                }
+                reject();
+            }
+            else {
+                resolve(template);
+            }
         });
     });
 }
