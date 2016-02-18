@@ -628,19 +628,32 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
             if (validateCancellation(errors, db, cancellingUser, registration, event, fee)) {
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                 yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
-                if (registeredUser) {
-                    var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
-                    //send each person on the confirmation their conf
-                    if (details && event.sendAutoNotifications) {
-                        yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
+                if (event) {
+                    if (event.sendMemberNotifications) {
+                        if (registeredUser) {
+                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            //send each person on the confirmation their conf
+                            if (details) {
+                                yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
+                            }
+                        }
+                        
+                        if (!primaryMemberConfirmation) { //now send one to the registering user also
+                            details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                            //send each person on the confirmation their conf
+                            if (details) {
+                                yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                            }
+                        }
                     }
-                }
-                
-                if (!primaryMemberConfirmation) { //now send one to the registering user also
-                    details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
-                    //send each person on the confirmation their conf
-                    if (details && event.sendAutoNotifications) {
-                        yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                    if (event.sendStaffNotifications) {
+                        if (isAdmin(cancellingUser) && registeredUser && cancellingUser_id !== registration.registeringUser) {
+                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            //send each person on the confirmation their conf
+                            if (details) {
+                                yield sendConfirmation(errors, db, cancellingUser, cancellingUser_id, details, fromAddress);
+                            }
+                        }
                     }
                 }
             }
@@ -661,15 +674,17 @@ function processEventCancel(errors, verb, db, context, _event, event, event_id, 
         console.log("processEventCancellation");
     }
     return co(function*() {
-        if (validateEventCancellation(errors, db, cancellingUser, event)) {
-            var eventName = event.title || '';
-            var eventNumber = event.number || '';
-            var message =  eventNumber + '\n';
-            message += eventName + ' has been cancelled.\n';
-            if (cancellingUser && cancellingUser.email) {
-                yield sendEmail(fromAddress, cancellingUser.email, eventName + ' is cancelled', null, message, null);
+        if (cancellingUser && event) {
+            if (validateEventCancellation(errors, db, cancellingUser, event)) {
+                var eventName = event.title || '';
+                var eventNumber = event.number || '';
+                var message = eventNumber + '\n';
+                message += eventName + ' has been cancelled.\n';
+                if (cancellingUser.email && event.sendStaffNotifications) {
+                    yield sendEmail(fromAddress, cancellingUser.email, eventName + ' is cancelled', null, message, null);
+                }
+                yield archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUser);
             }
-            yield archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUser);
         }
     }).catch(function (err) {
         console.log(err);  
@@ -679,7 +694,7 @@ function processEventCancel(errors, verb, db, context, _event, event, event_id, 
 function validateEventCancellation(errors, db, cancellingUser, event)
 {
     if (cancellingUser) {
-        if (cancellingUser.isAdmin || cancellingUser.isDeptHead) {
+        if (isAdmin(cancellingUser)) {
             return true;
         }
     }
@@ -709,7 +724,8 @@ function archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUs
             'allowGuest': event.allowGuest || false,
             'noRegistrationRequired': event.noRegistrationRequired || false,
             'displayRoster': event.displayRoster || false,
-            'sendAutoNotifications': event.sendAutoNotifications || false,
+            'sendMemberNotifications': event.sendMemberNotifications || false,
+            'sendStaffNotifications': event.sendStaffNotifications || false,
             'minAge': event.minAge || 0,
             'maxAge': event.maxAge || 199,
             'registrationCapacity': event.registrationCapacity || 1,
@@ -1067,19 +1083,21 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
                 }
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
                 yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
-                if (registeredUser) {
+                if (registeredUser && event.sendMemberNotifications) {
                     var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                     //send each person on the confirmation their conf
-                    if (details && event.sendAutoNotifications) {
+                    if (details) {
                         yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
                     }
                 }
                         
                 if (!primaryMemberConfirmation) { //now send one to the registering user also
-                    details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
-                    //send each person on the confirmation their conf
-                    if (details && event.sendAutoNotifications) {
-                        yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                    if ((isAdmin(registeringUser) && event.sendStaffNotifications) || event.sendMemberNotifications){
+                        details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                        //send each person on the confirmation their conf
+                        if (details) {
+                            yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                        }
                     }
                 }
             }
@@ -1111,7 +1129,7 @@ function validateCancellation(errors, db, cancellingUser, registration, event, f
         return false;
     }
     
-    if (cancellingUser.isAdmin || cancellingUser.isDeptHead)
+    if (isAdmin(cancellingUser))
         return true;
 
     if (event.noRegistrationRequired) {
@@ -1175,7 +1193,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         return false;
     }
 
-    if (reservingUser.isAdmin || reservingUser.isDeptHead) { //no rule checks
+    if (isAdmin(reservingUser)) { //no rule checks
         return true;
     }
     
@@ -1411,6 +1429,14 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
     return true;
 };
 
+function isAdmin(user)
+{
+    if (user) {
+        return user.isAdmin || user.isDeptHead;
+    }
+    return false;
+}
+
 function validateRegistration(errors, db, user, registeringUser, registration, event) {
     if (!event)
         return false;
@@ -1440,7 +1466,7 @@ function validateRegistration(errors, db, user, registeringUser, registration, e
         return false;
     }
     
-    if (registeringUser.isAdmin || registeringUser.isDeptHead) { //no rule checks
+    if (isAdmin(registeringUser)) { //no rule checks
         return true;
     }
     
@@ -1917,7 +1943,9 @@ function buildConfirmation(errors, verb, db, user, user_id, event, registration,
             }
         } else {
             var templateName = "confirmation.html";
+            subject = "MAC Registration Confirmation";
             if (verb === 'Cancel') {
+                subject = "MAC Registration Cancellation";
                 templateName = "cancellation.html";
                 if (reservation) {
                     subject = "MAC Reservation Cancellation";
