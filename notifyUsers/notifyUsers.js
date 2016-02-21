@@ -57,21 +57,22 @@ exports.handler = function (params, context) {
             var linkRoot = params.linkRoot;
             
             var notifyRequest = params.notifyRequest;
-            var interests = null;
-            var eventDetails = null;
-            if (notifyRequest) {
-                interests = notifyRequest.interests;
-                eventDetails = notifyRequest.eventDetails;
-            }
-            
-
 
             NodeFire.setCacheSize(10);
             NodeFire.DEBUG = true;
             var db = new NodeFire(firebaseUrl);
             db.auth(authToken).then(function () {
                 co(function*() {
-                    if (verb === 'notifyPromotion') {
+                    if (verb === 'emergency') {
+                        yield processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket);
+                    }
+                    else if (verb === 'notifyPromotion') {
+                        var interests = null;
+                        var eventDetails = null;
+                        if (notifyRequest) {
+                            interests = notifyRequest.interests;
+                            eventDetails = notifyRequest.eventDetails;
+                        }
 
                         var _users = db.child("users");
                         var users = yield _users.get();
@@ -94,34 +95,26 @@ exports.handler = function (params, context) {
                                     }
                                 }
                             }
-                            var addrs = Object.keys(nodups);
-                            for (var k = 0; k < addrs.length; k++) {
-                                var email = addrs[k];
-                                var addressee = email.substring(0, email.lastIndexOf("@"));
-                                var domain = email.substring(email.lastIndexOf("@") + 1);
-                                if (emails[domain]) {
-                                    emails[domain].push(addressee);
-                                }
-                                else {
-                                    emails[domain] = [addressee];
-                                }
+                            
+                            if (fillEmails(nodups, emails)) {
+                                
+                                var message = {};
+                                
+                                message.verb = verb;
+                                message.stage = stage;
+                                message.emails = emails;
+                                message.fromAddress = fromAddress;
+                                message.templateBucket = templateBucket;
+                                message.templateName = templateName;
+                                message.linkRoot = linkRoot;
+                                message.notifyRequest = notifyRequest;
+                                
+                                var payload = {
+                                    default: JSON.stringify(message)
+                                };
+                                
+                                yield publishSNS(bulkARN, payload, 'json');
                             }
-                            var message = {};
-                            
-                            message.verb = verb;
-                            message.stage = stage;
-                            message.emails = emails;
-                            message.fromAddress = fromAddress;
-                            message.templateBucket = templateBucket;
-                            message.templateName = templateName;
-                            message.linkRoot = linkRoot;
-                            message.notifyRequest = notifyRequest;
-                            
-                            var payload = {
-                                default: JSON.stringify(message)
-                            };
-                            
-                            yield publishSNS(bulkARN, payload, 'json');
                         }
                         context.succeed({});
                     }
@@ -139,6 +132,122 @@ exports.handler = function (params, context) {
         }
     }
 };
+
+function fillEmails(nodups, emails)
+{
+    var addrs = Object.keys(nodups);
+    for (var k = 0; k < addrs.length; k++) {
+        var email = addrs[k];
+        var addressee = email.substring(0, email.lastIndexOf("@"));
+        var domain = email.substring(email.lastIndexOf("@") + 1);
+        if (emails[domain]) {
+            emails[domain].push(addressee);
+        }
+        else {
+            emails[domain] = [addressee];
+        }
+    }
+    return addrs.length > 0;
+}
+
+function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processEmergencyNotification');
+            console.log({
+                'notification_id': notifyRequest.id,
+                'fromAddress': fromAddress,
+                'title': notifyRequest.title,
+                'description': notifyRequest.description,
+                'sentBy': notifyRequest.sentBy,
+                'image': notifyRequest.image,
+                'templateBucket': templateBucket,
+                'templateName': templateName
+            });
+        }
+        
+        var promises = [];
+        
+        if (config.verbose) {
+            console.log('notificationResponses');
+        }
+        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notifyRequest.id);
+        var responses = yield _responses.get();
+        if (responses) {
+            if (config.verbose) {
+                console.log('responses');
+            }
+            var responseKeys = Object.keys(responses);
+            for (var i = 0; i < responseKeys.length; i++) {
+                var key = responseKeys[i];
+                var _resp = db.child('notificationResponses/' + key);
+                promises.push(_resp.remove());
+            }
+        }
+        
+        var _notifyUsers = db.child('users/').orderByChild('sendNotificationConfirmation').equalTo(true);
+        var notifyUsers = yield _notifyUsers.get();
+        if (notifyUsers) {
+            
+            var notifyUsersKeys = Object.keys(notifyUsers);
+            for (var ui = 0; ui < notifyUsersKeys.length; ui++) {
+                var key = notifyUsersKeys[ui];
+                var notifyUser = notifyUsers[key];
+                if (notifyUser) {
+                    if (notifyUser.numNewNotifications) {
+                        notifyUser.numNewNotifications++;
+                    }
+                    else {
+                        notifyUser.numNewNotifications = 1;
+                    }
+                    var _user = db.child('users/' + key + '/numNewNotifications');
+                    
+                    promises.push(_user.set(notifyUser.numNewNotifications));
+                }
+            }
+        }
+
+        var _notifyEmails = db.child('users/').orderByChild('sendEmailConfirmation').equalTo(true);
+        var notifyEmails = yield _notifyEmails.get();
+        if (notifyEmails) {
+            var nodups = {};
+            var emails = {};
+            var notifyEmailKeys = Object.keys(notifyEmails);
+            
+            for (var ui = 0; ui < notifyEmailKeys.length; ui++) {
+                var key = notifyEmailKeys[ui];
+                var user = notifyEmails[key];
+                if (user && user.email) {
+                    nodups[user.email] = 1;
+                }
+            }
+            
+            if (fillEmails(nodups, emails)) {
+                var message = {};
+                
+                message.verb = verb;
+                message.stage = stage;
+                message.emails = emails;
+                message.fromAddress = fromAddress;
+                message.templateBucket = templateBucket;
+                message.templateName = templateName;
+                message.linkRoot = linkRoot;
+                message.notifyRequest = notifyRequest;
+                
+                var payload = {
+                    default: JSON.stringify(message)
+                };
+                
+                yield publishSNS(bulkARN, payload, 'json');
+            }
+        }
+        yield promises;
+    }).catch(function (err) {
+        if (config.verbose) {
+            console.error(err.stack);
+        }
+    });
+}
 
 function publishSNS(bulkARN, payload, messageStructure) {
     return new Promise(function (resolve, reject) {

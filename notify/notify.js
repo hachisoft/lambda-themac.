@@ -134,11 +134,7 @@ exports.handler = function (params, context) {
                     }
                 }
                 else if (params.type === 'emergency') {
-                    var template = yield getS3Object(templateBucket, templateName);
-                    if (template) {
-                        var templateBody = template.Body.toString();
-                        yield processEmergencyNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                    }
+                    yield processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'feedback') {
                     var template = yield getS3Object(templateBucket, templateName);
@@ -243,7 +239,6 @@ function processChildcareNotification(db, fromAddress, title, description, sentB
 };
 
 
-
 function processClosureNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
     return co(function*() {
         var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
@@ -259,87 +254,30 @@ function processClosureNotification(db, notification_id, fromAddress, title, des
     }).catch(onerror);
 };
 
-function processEmergencyNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
+function processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName) {
     return co(function*() {
-        
         if (config.verbose) {
             console.log('processEmergencyNotification');
-            console.log({
-                'notification_id': notification_id,
-                'fromAddress': fromAddress,
-                'title': title,
-                'description': description,
-                'sentBy': sentBy,
-                'image': image,
-            });
         }
+        var message = {};
+        message.verb = 'emergency';
+        message.stage = stage;
+        message.notifyRequest = params;
+        message.linkRoot = linkRoot;
+        message.fromAddress = fromAddress;
+        message.templateBucket = templateBucket;
+        message.templateName = templateName;
         
-        var promises = [];
+        var payload = {
+            default: JSON.stringify(message)
+        };
         
-        if (config.verbose) {
-            console.log('notificationResponses');
-        }
-        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
-        var responses = yield _responses.get();
-        if (responses) {
-            if (config.verbose) {
-                console.log('responses');
-            }
-            var responseKeys = Object.keys(responses);
-            for (var i = 0; i < responseKeys.length; i++) {
-                var key = responseKeys[i];
-                var _resp = db.child('notificationResponses/' + key);
-                promises.push(_resp.remove());
-            }
-        }
-        
-        var _notifyUsers = db.child('users/').orderByChild('sendNotificationConfirmation').equalTo(true);
-        var notifyUsers = yield _notifyUsers.get();
-        if (notifyUsers) {
-            
-            var notifyUsersKeys = Object.keys(notifyUsers);
-            for (var ui = 0; ui < notifyUsersKeys.length; ui++) {
-                var key = notifyUsersKeys[ui];
-                var notifyUser = notifyUsers[key];
-                if (notifyUser) {
-                    if (notifyUser.numNewNotifications) {
-                        notifyUser.numNewNotifications++;
-                    }
-                    else {
-                        notifyUser.numNewNotifications = 1;
-                    }
-                    var _user = db.child('users/' + key +'/numNewNotifications');
-                    
-                    promises.push(_user.set(notifyUser.numNewNotifications));
-                }
-            }
-        }
-        
-        var _notifyEmails = db.child('users/').orderByChild('sendEmailConfirmation').equalTo(true);
-        var notifyEmails = yield _notifyEmails.get();
-        if (notifyEmails) {
-            var notifyEmailKeys = Object.keys(notifyEmails);
-            
-            for (var ui = 0; ui < notifyEmailKeys.length; ui++) {
-                var key = notifyEmailKeys[ui];
-                var notifyEmail = notifyEmails[key];
-                if (notifyEmail) {
-                    var details = yield buildNotification(db, notifyEmail, key, template, title, description, sentBy, image);
-                    yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
-                }
-            }
-            
-        }
-        yield promises;
+        yield publishSNS(notifyUsersARN, payload, 'json');
+
     }).catch(function (err) {
-        if (config.verbose) {
-            console.error(err.stack);
-        }
+        console.log(err);
     });
-};
-
-
-
+}
 
 function processUserNotification(db, user_id, fromAddress, title, description, sentBy, image, template) {
     return co(function*() {

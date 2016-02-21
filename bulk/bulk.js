@@ -214,7 +214,33 @@ function getContent(db, verb, template, notifyRequest, linkRoot)
 {
     return co(function*() {
         var content = null;
-        if (verb==='notifyPromotion'){
+        if (verb === 'emergency') {
+            var mark = require('markup-js');
+            
+            var details = {
+                title: notifyRequest.title,
+                description: notifyRequest.description,
+            };
+            
+            if (notifyRequest.sentBy) {
+                details.sentBy = notifyRequest.sentBy;
+            }
+            
+            if (notifyRequest.image) {
+                details.image = notifyRequest.image;
+            }
+            
+            if (notifyRequest.memberName) {
+                details.memberName = notifyRequest.memberName;
+            }
+            
+            if (template) {
+                content = mark.up(template, details);
+            }
+            
+            return content;
+        }
+        else if (verb==='notifyPromotion'){
             var eventDetails = notifyRequest.eventDetails;
             var includeParkingProjection = notifyRequest.includeParkingProjection;
             var contactInfo = notifyRequest.contactInfo;
