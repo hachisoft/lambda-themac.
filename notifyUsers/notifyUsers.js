@@ -63,61 +63,16 @@ exports.handler = function (params, context) {
             var db = new NodeFire(firebaseUrl);
             db.auth(authToken).then(function () {
                 co(function*() {
-                    if (verb === 'emergency') {
+                    if (verb === 'closure') {
+                        yield processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket);
+                    }
+                    else if (verb === 'emergency') {
                         yield processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket);
                     }
                     else if (verb === 'notifyPromotion') {
-                        var interests = null;
-                        var eventDetails = null;
-                        if (notifyRequest) {
-                            interests = notifyRequest.interests;
-                            eventDetails = notifyRequest.eventDetails;
-                        }
-
-                        var _users = db.child("users");
-                        var users = yield _users.get();
-                        
-                        if (users) {
-                            var emails = {};
-                            var nodups = {};
-                            for (var i = 0; i < interests.length; i++) {
-                                var _interestedUsers = db.child("userInterests/").orderByChild('interest').equalTo(interests[i]);
-                                var interestedUsers = yield _interestedUsers.get();
-                                if (interestedUsers) {
-                                    var interestedUserKeys = Object.keys(interestedUsers);
-                                    for (var j = 0; j < interestedUserKeys.length; j++) {
-                                        var key = interestedUserKeys[j];
-                                        var iu = interestedUsers[key].user;
-                                        var user = users[iu];
-                                        if (user && user.email) {
-                                            nodups[user.email] = 1;
-                                        }
-                                    }
-                                }
-                            }
-                            
-                            if (fillEmails(nodups, emails)) {
-                                
-                                var message = {};
-                                
-                                message.verb = verb;
-                                message.stage = stage;
-                                message.emails = emails;
-                                message.fromAddress = fromAddress;
-                                message.templateBucket = templateBucket;
-                                message.templateName = templateName;
-                                message.linkRoot = linkRoot;
-                                message.notifyRequest = notifyRequest;
-                                
-                                var payload = {
-                                    default: JSON.stringify(message)
-                                };
-                                
-                                yield publishSNS(bulkARN, payload, 'json');
-                            }
-                        }
-                        context.succeed({});
+                        yield processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket);
                     }
+                    context.succeed({});
                 }).catch(function (err) {
                     console.log(err);
                     context.fail("Exception was thrown");
@@ -149,6 +104,147 @@ function fillEmails(nodups, emails)
     }
     return addrs.length > 0;
 }
+
+function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket)
+{
+    return co(function*() {
+        var interests = null;
+        var eventDetails = null;
+        if (notifyRequest) {
+            interests = notifyRequest.interests;
+            eventDetails = notifyRequest.eventDetails;
+        }
+        
+        var _users = db.child("users");
+        var users = yield _users.get();
+        
+        if (users) {
+            var emails = {};
+            var nodups = {};
+            for (var i = 0; i < interests.length; i++) {
+                var _interestedUsers = db.child("userInterests/").orderByChild('interest').equalTo(interests[i]);
+                var interestedUsers = yield _interestedUsers.get();
+                if (interestedUsers) {
+                    var interestedUserKeys = Object.keys(interestedUsers);
+                    for (var j = 0; j < interestedUserKeys.length; j++) {
+                        var key = interestedUserKeys[j];
+                        var iu = interestedUsers[key].user;
+                        var user = users[iu];
+                        if (user && user.email) {
+                            nodups[user.email] = 1;
+                        }
+                    }
+                }
+            }
+            
+            if (fillEmails(nodups, emails)) {
+                
+                var message = {};
+                
+                message.verb = verb;
+                message.stage = stage;
+                message.emails = emails;
+                message.fromAddress = fromAddress;
+                message.templateBucket = templateBucket;
+                message.templateName = templateName;
+                message.linkRoot = linkRoot;
+                message.notifyRequest = notifyRequest;
+                
+                var payload = {
+                    default: JSON.stringify(message)
+                };
+                
+                yield publishSNS(bulkARN, payload, 'json');
+            }
+        }
+    }).catch(function (err) {
+        if (config.verbose) {
+            console.error(err.stack);
+        }
+    });
+}
+
+function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processClosureNotification');
+            console.log({
+                'notification_id': notifyRequest.notificationId,
+                'fromAddress': fromAddress,
+                'title': notifyRequest.title,
+                'description': notifyRequest.description,
+                'sentBy': notifyRequest.sentBy,
+                'image': notifyRequest.image,
+                'templateBucket': templateBucket,
+                'templateName': templateName
+            });
+        }
+        var promises = [];
+        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notifyRequest.notificationId);
+        var responses = yield _responses.get();
+        if (responses) {
+            var responseKeys = Object.keys(responses);
+            for (var i = 0; i < responseKeys.length; i++) {
+                var key = responseKeys[i];
+                var _resp = db.child('notificationResponses/' + key);
+                promises.push(_resp.remove());
+            }
+        }
+
+        var interests = null;
+        if (notifyRequest) {
+            interests = notifyRequest.interestIds;
+        }
+        
+        var _users = db.child("users");
+        var users = yield _users.get();
+        
+        if (users) {
+            var emails = {};
+            var nodups = {};
+            for (var i = 0; i < interests.length; i++) {
+                var _interestedUsers = db.child("userInterests/").orderByChild('interest').equalTo(interests[i]);
+                var interestedUsers = yield _interestedUsers.get();
+                if (interestedUsers) {
+                    var interestedUserKeys = Object.keys(interestedUsers);
+                    for (var j = 0; j < interestedUserKeys.length; j++) {
+                        var key = interestedUserKeys[j];
+                        var iu = interestedUsers[key].user;
+                        var user = users[iu];
+                        if (user && user.email && user.sendEmailConfirmation) {
+                            nodups[user.email] = 1;
+                        }
+                    }
+                }
+            }
+            
+            if (fillEmails(nodups, emails)) {
+                
+                var message = {};
+                
+                message.verb = verb;
+                message.stage = stage;
+                message.emails = emails;
+                message.fromAddress = fromAddress;
+                message.templateBucket = templateBucket;
+                message.templateName = templateName;
+                message.linkRoot = linkRoot;
+                message.notifyRequest = notifyRequest;
+                
+                var payload = {
+                    default: JSON.stringify(message)
+                };
+                
+                yield publishSNS(bulkARN, payload, 'json');
+            }
+        }
+        yield promises;
+    }).catch(function (err) {
+        if (config.verbose) {
+            console.error(err.stack);
+        }
+    });
+};
 
 function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket) {
     return co(function*() {

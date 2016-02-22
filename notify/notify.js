@@ -127,11 +127,7 @@ exports.handler = function (params, context) {
                     }
                 }
                 else if (params.type === 'closure') {
-                    var template = yield getS3Object(templateBucket, templateName);
-                    if (template) {
-                        var templateBody = template.Body.toString();
-                        yield processClosureNotification(db, params.id, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                    }
+                    yield processClosureNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'emergency') {
                     yield processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
@@ -239,19 +235,29 @@ function processChildcareNotification(db, fromAddress, title, description, sentB
 };
 
 
-function processClosureNotification(db, notification_id, fromAddress, title, description, sentBy, image, template) {
+function processClosureNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName) {
     return co(function*() {
-        var _responses = db.child("notificationResponses/").orderByChild('notification').equalTo(notification_id);
-        var responses = yield _responses.get();
-        if (responses) {
-            var responseKeys = Object.keys(responses);
-            for (var i = 0; i < responseKeys.length; i++) {
-                var key = responseKeys[i];
-                var _resp = db.child('notificationResponses/' + key);
-                yield _resp.remove();
-            }
+        if (config.verbose) {
+            console.log('processClosureNotification');
         }
-    }).catch(onerror);
+        var message = {};
+        message.verb = 'closure';
+        message.stage = stage;
+        message.notifyRequest = params;
+        message.linkRoot = linkRoot;
+        message.fromAddress = fromAddress;
+        message.templateBucket = templateBucket;
+        message.templateName = templateName;
+        
+        var payload = {
+            default: JSON.stringify(message)
+        };
+        
+        yield publishSNS(notifyUsersARN, payload, 'json');
+
+    }).catch(function (err) {
+        console.log(err);
+    });
 };
 
 function processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName) {

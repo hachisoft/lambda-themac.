@@ -118,10 +118,10 @@ exports.handler = function (params, context) {
                                 delete emails[domain];
                             }
                             
-                            /*if (config.verbose) {
+                            if (config.verbose) {
                                 console.log("sent email:"+sentMail.length);
                                 console.log(sentMail);
-                            }*/
+                            }
                             
                             var domainsLeft = Object.keys(emails);
 
@@ -151,6 +151,9 @@ exports.handler = function (params, context) {
                                     }
                                     context.succeed({});
                                 });
+                            }
+                            else {
+                                context.succeed({});
                             }
                         }
                         else {
@@ -214,7 +217,7 @@ function getContent(db, verb, template, notifyRequest, linkRoot)
 {
     return co(function*() {
         var content = null;
-        if (verb === 'emergency') {
+        if (verb === 'emergency' || verb === 'closure') {
             var mark = require('markup-js');
             
             var details = {
