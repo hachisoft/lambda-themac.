@@ -133,18 +133,17 @@ exports.handler = function (params, context) {
                     yield processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'feedback') {
+                    yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
+                }
+                else if (params.type === 'eventCreate') {
                     var template = yield getS3Object(templateBucket, templateName);
                     if (template) {
                         var templateBody = template.Body.toString();
-                        yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        yield processEventCreateNotification(db, params.id, result, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
                     }
                 }
                 else if (params.type === 'childcare') {
-                    var template = yield getS3Object(templateBucket, templateName);
-                    if (template) {
-                        var templateBody = template.Body.toString();
-                        yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
-                    }
+                    yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
                 }
                 else if (params.type === 'notifyPromotion') {
                     yield processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
@@ -317,6 +316,50 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
             
             if (user.sendEmailConfirmation) {
                 yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
+            }
+        }
+    }).catch(onerror);
+};
+
+function processEventCreationNotification(db, user_id, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processEventCreationNotification');
+        }
+
+        for (var i = 0; i < config.eventCreationUsers.length; i++) {
+            var memberNumber = config.eventCreationUsers[i];
+            var _user = db.child("users/").orderByChild('memberNumber').equalTo(memberNumber);
+            var user = yield _user.get();
+            if (user) {
+                var details = yield buildNotification(db, user, user_id, template, title, description, sentBy, image);
+                if (user.sendNotificationConfirmation) {
+                    //update just this attribute
+                    var _user = db.child('users/' + user_id + '/numNewNotifications');
+                    if (user.numNewNotifications) {
+                        user.numNewNotifications++;
+                    }
+                    else {
+                        user.numNewNotifications = 1;
+                    }
+                    yield _user.set(user.numNewNotifications);
+                    var key = db.generateUniqueKey();
+                    var _notification = db.child('notifications/' + key);
+                    
+                    var notification = {
+                        type: 'Reminder',
+                        timestamp: moment().valueOf(),
+                        title: title,
+                        description: description,
+                        user: user_id,
+                        imageId: image
+                    };
+                    yield _notification.set(notification);
+                }
+                
+                if (user.sendEmailConfirmation) {
+                    yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
+                }
             }
         }
     }).catch(onerror);

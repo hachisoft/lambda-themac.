@@ -30,6 +30,7 @@ var config = {
         'msdedwards@hachisoft.com',
         'czoucha@themac.com'
     ],
+    "eventCreationUsers": ['830830'],
     "devNotifyUsersARN": "arn:aws:sns:us-west-2:172166497234:notify-users",
     "prod2NotifyUsersARN": "arn:aws:sns:us-west-2:907623002484:notify-users",
     "prodNotifyUsersARN": "arn:aws:sns:us-west-2:907623002484:notify-users",
