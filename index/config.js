@@ -30,20 +30,18 @@ var config = {
         'msdedwards@hachisoft.com',
         'czoucha@themac.com'
     ],
-    "tauscherEmails": [
-        'msdedwards@hachisoft.com',
-        'czoucha@themac.com'
-    ],
-    "mcalpinEmails": [
-        'msdedwards@hachisoft.com',
-        'czoucha@themac.com'
-    ],
     "eventCreationUsers": ['830830'],
     "devNotifyUsersARN": "arn:aws:sns:us-west-2:172166497234:notify-users",
     "prod2NotifyUsersARN": "arn:aws:sns:us-west-2:907623002484:notify-users",
     "prodNotifyUsersARN": "arn:aws:sns:us-west-2:907623002484:notify-users",
     "devLinkRoot": "http://localhost:4200",
     "prod2LinkRoot": "https://macdata-2.firebaseapp.com",
-    "prodLinkRoot": "https://sizzling-inferno-283.firebaseapp.com"
+    "prodLinkRoot": "https://sizzling-inferno-283.firebaseapp.com",
+    "devAlgoliaApp": "8DPGTBYS6E",
+    "devAlgoliaAdminKey": "caa2653d526bacda7d15ec00b90582a4",
+    "prodAlgoliaApp": "MJ7S7WIVSD",
+    "prodAlgoliaAdminKey": "f369797fe6f9f0cbdab22fd6d560ec4d",
+    "prod2AlgoliaApp": "VMP51ISYEX",
+    "prod2AlgoliaAdminKey": "7832711cf59a8b5097caa3f158912cc9",
 }
 module.exports = config

@@ -5,7 +5,6 @@ var NodeFire = require('nodefire');
 var co = require('co');
 var moment = require('moment-timezone');
 
-var thunkify = require('thunkify');
 var config = require('./config.js');
 var util = require('util');
 
@@ -148,6 +147,12 @@ exports.handler = function (params, context) {
                 else if (params.type === 'notifyPromotion') {
                     yield processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
+                else if (params.type === 'mcalpin') {
+                    yield processMcAlpinNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                }
+                else if (params.type === 'tauscher') {
+                    yield processTauscherNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                }
                 context.succeed({});
             }).catch(onerror);
         });
@@ -228,6 +233,30 @@ function processChildcareNotification(db, fromAddress, title, description, sentB
         }
         for (var i = 0; i < config.childcareEmails.length; i++) {
             var destEmail = config.feedbackEmails[i];
+            yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
+};
+
+function processMcAlpinNotification(db, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processMcAlpinNotification');
+        }
+        for (var i = 0; i < config.mcalpinEmails.length; i++) {
+            var destEmail = config.mcalpinEmails[i];
+            yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
+};
+
+function processTauscherNotification(db, fromAddress, title, description, sentBy, image, template) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processTauscherNotification');
+        }
+        for (var i = 0; i < config.tauscherEmails.length; i++) {
+            var destEmail = config.tauscherEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);
