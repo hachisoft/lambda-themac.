@@ -211,8 +211,20 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                         var key = interestedUserKeys[j];
                         var iu = interestedUsers[key].user;
                         var user = users[iu];
-                        if (user && user.email && user.sendEmailConfirmation) {
-                            nodups[user.email] = 1;
+                        if (user) {
+                            if (user.email && user.sendEmailConfirmation) {
+                                nodups[user.email] = 1;
+                            }
+                            if (user.sendNotificationConfirmation) {
+                                if (user.numNewNotifications) {
+                                    user.numNewNotifications++;
+                                }
+                                else {
+                                    user.numNewNotifications = 1;
+                                }
+                                var _userNumNewNotifications = db.child('users/' + iu + '/numNewNotifications');
+                                promises.push(_userNumNewNotifications.set(user.numNewNotifications));
+                            }
                         }
                     }
                 }

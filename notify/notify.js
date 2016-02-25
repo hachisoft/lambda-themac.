@@ -148,10 +148,10 @@ exports.handler = function (params, context) {
                     yield processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'mcalpin') {
-                    yield processMcAlpinNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                    yield processMcAlpinNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
                 }
                 else if (params.type === 'tauscher') {
-                    yield processTauscherNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                    yield processTauscherNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
                 }
                 context.succeed({});
             }).catch(onerror);
@@ -254,6 +254,14 @@ function processTauscherNotification(db, fromAddress, title, description, sentBy
     return co(function*() {
         if (config.verbose) {
             console.log('processTauscherNotification');
+            console.log({
+                'fromAddress': fromAddress,
+                'title': title,
+                'description': description,
+                'sentBy': sentBy,
+                'image': image,
+                'template': template
+            });
         }
         for (var i = 0; i < config.tauscherEmails.length; i++) {
             var destEmail = config.tauscherEmails[i];
@@ -335,11 +343,15 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
                 var notification = {
                     type: 'Reminder',
                     timestamp: moment().valueOf(),
-                    title: title,
-                    description: description,
+                    title: title || '',
+                    description: description || '',
                     user: user_id,
-                    imageId: image
                 };
+                
+                if (image) {
+                    notification.imageId = image;
+                }
+
                 yield _notification.set(notification);
             }
             
