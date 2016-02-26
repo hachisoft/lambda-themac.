@@ -37,7 +37,7 @@ exports.handler = function (params, context) {
     if (params && (params.registrations || params.reservation || params.event)) {
         if (config.verbose) {
             console.log(params);
-            console.log(context);
+            //console.log(context);
         }
         
         var firebaseUrl = null;
@@ -79,15 +79,20 @@ exports.handler = function (params, context) {
                 console.log('Auth succeeded');
             }
             if (params.reservation) {
-                var _reservation = db.child('reservations/' + params.reservation);
                 co(function*() {
-                    var reservation = yield _reservation.get();
-                    if (reservation) {
-                        if (params.verb === 'Reserve' && reservation.status === 'Pending') {
-                            yield processReservation(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
-                        }
-                        else if (params.verb === 'Cancel') {
-                            yield processReservationCancel(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                    if (params.verb === 'Validate') {
+                        yield processReservationValidation(errors, db, params.reservation, params.session);
+                    }
+                    else {
+                        var _reservation = db.child('reservations/' + params.reservation);
+                        var reservation = yield _reservation.get();
+                        if (reservation) {
+                            if (params.verb === 'Reserve' && reservation.status === 'Pending') {
+                                yield processReservation(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                            }
+                            else if (params.verb === 'Cancel') {
+                                yield processReservationCancel(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                            }
                         }
                     }
                     if (errors.length > 0) {
@@ -96,7 +101,6 @@ exports.handler = function (params, context) {
                     else {
                         context.succeed({});
                     }
-                    
                 }).catch(function (err) {
                     if (config.verbose) {
                         console.error(err.stack);
@@ -233,45 +237,60 @@ function processWishlist(errors,db, context, registration)
     });
 }
 
-function processReservation(errors,verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
-    var totalCost = null;
-    var adultCount = null;
-    var juniorCount = null;
-    if (config.verbose) { console.log("processReservation"); }
+//note reservation and session are passed in an may be "temp" objects that aren't in firebase
+function getReservationDetails(db, reservation, session, reservation_id, params)
+{
     return co(function*() {
-        var _session = db.child('sessions/' + reservation.session);
-        var _reservationUser = db.child('users/' + reservation.reservationUser);
-        var _reservingUser = db.child('users/' + reservation.reservingUser);
-        var _location = db.child('locations/' + reservation.location);
-        var _interest = db.child('interests/' + reservation.interest);
-        var _userReservationsForInterest = db.child("reservations/").orderByChild('reservationUser').equalTo(reservation.reservationUser);
-        var _locationReservations = db.child("reservations/").orderByChild('location').equalTo(reservation.location);
-        var _rules = db.child("rules/");
-        var session = yield _session.get();
-        var location = yield _location.get();
-        var interest = yield _interest.get();
         
-        var _reservationRule = db.child('reservationRules/' + interest.reservationRule);
-        var reservationRule= yield _reservationRule.get();
-        var reservationUser = yield _reservationUser.get();
-        var reservingUser = yield _reservingUser.get();
-        var _urfi = yield _userReservationsForInterest.get();
-        var _lr = yield _locationReservations.get();
-        var _r = yield _rules.get();
-        var userReservationsForInterest = [];
-        var locationReservations = [];
-        var rules = [];
-        if (_urfi) {
-            var urfiKeys = Object.keys(_urfi);
-            for (var w = 0; w < urfiKeys.length; w++) {
-                var key = urfiKeys[w];
-                if (key != reservation_id) {
+        params._reservationUser = db.child('users/' + reservation.reservationUser);
+        params._reservingUser = db.child('users/' + reservation.reservingUser);
+        params._location = db.child('locations/' + reservation.location);
+        params._interest = db.child('interests/' + reservation.interest);
+        
+        params.location = yield params._location.get();
+        params.interest = yield params._interest.get();
+        params.reservationUser = yield params._reservationUser.get();
+        params.reservingUser = yield params._reservingUser.get();
+
+        var _reservationRule = db.child('reservationRules/' + params.interest.reservationRule);
+        params.reservationRule = yield _reservationRule.get();
+                
+        
+        //if passed null we don't care to collect rules
+        if (params.rules) {
+            var _rules = db.child("rules/");
+            var _r = yield _rules.get();
+            if (_r) {
+                Object.keys(_r).forEach(function (key) {
+                    var rule = _r[key];
+                    var ruleLocations = Object.keys(rule.locations);
+                    for (var k = 0; k < ruleLocations.length; k++) {
+                        if (ruleLocations[k] === reservation.location) {
+                            params.rules.push(rule);
+                        }
+                    }
+                });
+            }
+        }
+        
+        //if passed null we don't care to collect user reservations for this interest
+        if (params.userReservationsForInterest) {
+            var _userReservationsForInterest = db.child("reservations/").orderByChild('reservationUser').equalTo(reservation.reservationUser);
+            var _urfi = yield _userReservationsForInterest.get();
+            if (_urfi) {
+                var urfiKeys = Object.keys(_urfi);
+                for (var w = 0; w < urfiKeys.length; w++) {
+                    var key = urfiKeys[w];
+
+                    if (reservation_id && key === reservation_id) {
+                        continue;
+                    }
                     if (_urfi[key].interest === reservation.interest) {
                         var urfi = _urfi [key];
                         var _urfiSession = db.child('sessions/' + urfi.session);
                         var urfiSession = yield _urfiSession.get();
                         if (urfiSession) {
-                            userReservationsForInterest.push({
+                            params.userReservationsForInterest.push({
                                 'id': key,
                                 'value': urfi,
                                 'session': urfiSession
@@ -281,36 +300,85 @@ function processReservation(errors,verb, db, context, _reservation, reservation,
                 }
             }
         }
-        if (_lr) {
-            var lrKeys = Object.keys(_lr);
-            for (var t = 0; t < lrKeys.length; t++) {
-                var key = lrKeys[t];
-                var lr = _lr[key];
-                var _lrSession = db.child('sessions/' + lr.session);
-                var lrSession = yield _lrSession.get();
-                if (lrSession) {
-                    locationReservations.push({
-                        'id': key,
-                        'value': lr,
-                        'session': lrSession
-                    });
+
+        //if passed null we don't care to collect reservations for this location
+        if (params.locationReservations) {
+            var _locationReservations = db.child("reservations/").orderByChild('location').equalTo(reservation.location);
+            var _lr = yield _locationReservations.get();
+            if (_lr) {
+                var lrKeys = Object.keys(_lr);
+                for (var t = 0; t < lrKeys.length; t++) {
+                    var key = lrKeys[t];
+                    var lr = _lr[key];
+                    var _lrSession = db.child('sessions/' + lr.session);
+                    var lrSession = yield _lrSession.get();
+                    if (lrSession) {
+                        params.locationReservations.push({
+                            'id': key,
+                            'value': lr,
+                            'session': lrSession
+                        });
+                    }
                 }
             }
         }
-        if (_r) {
-            Object.keys(_r).forEach(function (key) {
-                var rule = _r[key];
-                var ruleLocations = Object.keys(rule.locations);
-                for (var k = 0; k < ruleLocations.length; k++) {
-                    if (ruleLocations[k] === reservation.location) {
-                        rules.push(rule);
-                    }
-                }
-            });
+    }).catch(function (err) {
+        console.log(err);
+    });
+}
+
+function processReservationValidation(errors, db, reservation, session)
+{
+    return co(function*() {
+        var params = {
+            userReservationsForInterest: [],
+            locationReservations: [],
+            rules: []
         }
         
+        //gather data from firebase for validation
+        yield getReservationDetails(db, reservation, session, null, params);
+
+        validateReservation(false, errors, db, params.reservationUser, params.reservingUser, reservation, null, params.location, params.interest, params.userReservationsForInterest, params.locationReservations, params.reservationRule, params.rules, session);
+
+    }).catch(function (err) {
+        console.log(err);
+    });
+}
+
+function processReservation(errors,verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
+    var totalCost = null;
+    var adultCount = null;
+    var juniorCount = null;
+    if (config.verbose) { console.log("processReservation"); }
+    return co(function*() {
+        var _session = db.child('sessions/' + reservation.session);
+        var session = yield _session.get();
+        
+        var params = {
+            userReservationsForInterest: [],
+            locationReservations: [],
+            rules: []
+        }
+        
+        //gather data from firebase for validation
+        yield getReservationDetails(db, reservation, session, reservation_id, params);
+        
+        var reservationUser = params.reservationUser;
+        var _reservationUser = params._reservationUser;
+        var reservingUser = params.reservingUser;
+        var _reservingUser = params._reservingUser;
+        var _location = params._location;
+        var location = params.location;
+        var interest = params.interest;
+        var _interest = params._interest;
+        var locationReservations = params.locationReservations;
+        var reservationRule = params.reservationRule;
+        var rules = params.rules;
+        var userReservationsForInterest = params.userReservationsForInterest;
+        
         if (session && reservationUser) {
-            if (validateReservation(errors, db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, reservationRule, rules, session)) {
+            if (validateReservation(true, errors, db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, reservationRule, rules, session)) {
                 reservation.status = "Reserved";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
@@ -337,7 +405,6 @@ function processReservation(errors,verb, db, context, _reservation, reservation,
         }
     }).catch(function (err) {
         console.log(err);  
-        console.log(err);
     });
 };
 
@@ -351,37 +418,32 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
     }
     return co(function*() {
         var _session = db.child('sessions/' + reservation.session);
-        var _reservationUser = db.child('users/' + reservation.reservationUser);
-        var _reservingUser = db.child('users/' + reservation.reservingUser);
-        var _location = db.child('locations/' + reservation.location);
-        var _interest = db.child('interests/' + reservation.interest);
-        var _userReservationsForInterest = db.child("reservations/").orderByChild('reservationUser').equalTo(reservation.reservationUser);
-        var _locationReservations = db.child("reservations/").orderByChild('location').equalTo(reservation.location);
-        var _rules = db.child("rules/");
         var session = yield _session.get();
-        var location = yield _location.get();
-        var interest = yield _interest.get();
         
-        var reservationUser = yield _reservationUser.get();
-        var reservingUser = yield _reservingUser.get();
-        var _urfi = yield _userReservationsForInterest.get();
-        var _lr = yield _locationReservations.get();
-        var userReservationsForInterest = [];
-        var locationReservations = [];
-        if (_urfi) {
-            Object.keys(_urfi).forEach(function (key) {
-                if (_urfi[key].interest === reservation.interest)
-                    userReservationsForInterest.push(_urfi[key]);
-            });
-        }
-        if (_lr) {
-            Object.keys(_lr).forEach(function (key) {
-                locationReservations.push(_lr[key]);
-            });
+        var params = {
+            userReservationsForInterest: null,
+            locationReservations: null,
+            rules: null
         }
         
+        //gather data from firebase for validation
+        yield getReservationDetails(db, reservation, session, null, params);
+        
+        var reservationUser = params.reservationUser;
+        var _reservationUser = params._reservationUser;
+        var reservingUser = params.reservingUser;
+        var _reservingUser = params._reservingUser;
+        var _location = params._location;
+        var location = params.location;
+        var interest = params.interest;
+        var _interest = params._interest;
+        var locationReservations = params.locationReservations;
+        var reservationRule = params.reservationRule;
+        var rules = params.rules;
+        var userReservationsForInterest = params.userReservationsForInterest;
+
         if (session && reservationUser) {
-            if (validateReservationCancel(errors,session,reservation,location,interest,reservingUser,reservationUser,reservation)) {
+            if (validateReservationCancel(errors,session,reservation_id,location, interest,reservingUser, reservationUser, reservation)) {
                 reservation.status = "Cancelled";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
@@ -411,7 +473,7 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
     });
 };
 
-function validateReservationCancel(errors, session, reservation, location, interest, reservingUser, reservationUser, reservation)
+function validateReservationCancel(errors, session, reservation_id, location, interest, reservingUser, reservationUser, reservation)
 {
     return true;
 }
@@ -1161,7 +1223,8 @@ function validateCancellation(errors, db, cancellingUser, registration, event, f
     return true;
 };
 
-function validateReservation(errors, db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, interestRule, locationRules, session) {
+function validateReservation(dontEnforce, errors, db, reservationUser, reservingUser, reservation, reservation_id, location, interest, userReservationsForInterest, locationReservations, interestRule, locationRules, session) {
+    var ret = true;
     if (!location) {
         AddError(errors, 'Location was not valid');
         return false;
@@ -1195,7 +1258,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         return false;
     }
 
-    if (isAdmin(reservingUser)) { //no rule checks
+    if (dontEnforce && isAdmin(reservingUser)) { //no rule checks
         return true;
     }
     
@@ -1203,7 +1266,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         if (!interestRule.guestAllowed) {
             reservation.validationError = 'Reservation has guest and a guest is not allowed';
             AddError(errors,reservation.validationError);
-            return false;
+            ret = false;
         }
     }
     
@@ -1213,9 +1276,9 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         var reservationEndDate = moment(session.endDate);
         var now = moment();
         if (reservationEndDate.isBefore(now)) {
-            reservation.validationError = 'The '+  formatTime(reservationDate, ' MM / DD / YY @ h: mm A ')+'-'+ formatTime(reservationEndDate, ' MM / DD / YY @ h: mm A ')+' session has already occurred';
+            reservation.validationError = 'The '+  formatTime(reservationDate, 'MM/DD/YY @ h:mm A')+'-'+ formatTime(reservationEndDate, 'MM/DD/YY @ h:mm A')+' session has already occurred';
             AddError(errors,reservation.validationError);
-            return false;
+            ret = false;
         }
         var startOfReservationDate = reservationDate.clone().startOf('day');
         var startOfDateReserved = dateReserved.clone().startOf('day');
@@ -1257,7 +1320,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         if (!playRange.contains(reservationDate)) {
             reservation.validationError = 'Reservation (' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A') + ') falls outside of when the court is open (' + formatRange(playRange, 'MM/DD/YY @ h:mm A') + ')';
             AddError(errors,reservation.validationError);
-            return false;
+            ret = false;
         }
         
         if (dateReserved.isAfter(dateReservedWindowOpens)) {
@@ -1275,7 +1338,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
         if (!reservationRange.contains(dateReserved)) {
             reservation.validationError = 'Reservation ('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
             AddError(errors,reservation.validationError);
-            return false;
+            ret = false;
         }
         
         var advancedReservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowOpens.clone().subtract(generalWindow, 'days'));
@@ -1320,7 +1383,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                     if (advancedReservationCount > locationRule.allowed) {
                         reservation.validationError = 'Only '+locationRule.allowed+' advanced reservations are allowed ' + locationRule.frequency;
                         AddError(errors,reservation.validationError);
-                        return false;
+                        ret = false;
                     }
                 }
             }
@@ -1347,7 +1410,7 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                     if (reservationCount > locationRule.guestAllowed) {
                         reservation.validationError = 'Only ' + locationRule.guestAllowed + ' guests are allowed '+locationRule.frequency;
                         AddError(errors,reservation.validationError);
-                        return false;
+                        ret = false;
                     }
                 }
             }
@@ -1402,13 +1465,13 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                         if (lrSessionDate.isSame(sessionDate, 'day')) {
                             reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber + ' today';
                             AddError(errors,reservation.validationError);
-                            return false;
+                            ret = false;
                         }
                     }
                     if (lrRange.overlaps(sessionRange)) {
                         reservation.validationError = location.name + ' has already been reserved by member ' + locationReservation.value.memberNumber;
                         AddError(errors,reservation.validationError);
-                        return false;
+                        ret = false;
                     }
                 }
             }
@@ -1422,13 +1485,13 @@ function validateReservation(errors, db, reservationUser, reservingUser, reserva
                     if (urfiDate.isSame(sessionDate, 'day')) {
                         reservation.validationError = 'Member '+urfi.value.memberNumber + ' has already made a '+interest.name+' reservation ('+ formatTime(urfiDate,'MM/DD/YY @ h:mm A')+')';
                         AddError(errors,reservation.validationError);
-                        return false;
+                        ret = false;
                     }
                 }
             }
         }
     }
-    return true;
+    return ret;
 };
 
 function isAdmin(user)
