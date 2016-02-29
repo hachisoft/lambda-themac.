@@ -138,7 +138,7 @@ exports.handler = function (params, context) {
                     var template = yield getS3Object(templateBucket, templateName);
                     if (template) {
                         var templateBody = template.Body.toString();
-                        yield processEventCreateNotification(db, params.id, result, fromAddress, params.title, params.description, params.sentBy, params.image, templateBody);
+                        yield processEventCreateNotification(db, params.id, fromAddress, templateBody);
                     }
                 }
                 else if (params.type === 'childcare') {
@@ -222,6 +222,70 @@ function processFeedbackNotification(db, fromAddress, title, description, sentBy
         for (var i = 0; i < config.feedbackEmails.length; i++) {
             var destEmail = config.feedbackEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
+        }
+    }).catch(onerror);
+};
+
+function processEventCreateNotification(db, event_id, fromAddress, templateBody) {
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processEventCreateNotification');
+        }
+        
+        var _evt = db.child("events/" + event_id);
+        var evt = yield _evt.get();
+        if (evt) {
+            var sentBy = null;
+            var image = null;
+            var title = evt.title + " (" + evt.number + ') was created';
+            var description = evt.description;
+            for (var i = 0; i < config.eventCreationNotifications.length; i++) {
+                var mn = config.eventCreationNotifications[i];
+                var _users = db.child("users/").orderByChild('memberNumber').equalTo(mn);
+                var usersArray = yield _users.get();
+                if (usersArray) {
+                    var keys = Object.keys(usersArray);
+                    for (var j = 0; j < keys.length; j++) {
+                        var key = keys[j];
+                        var user = usersArray[key];
+                        if (user) {
+                            var details = yield buildNotification(db, user, key, templateBody, title, description, sentBy, image);
+
+                            if (user.sendNotificationConfirmation) {
+                                //update just this attribute
+                                var _user = db.child('users/' + key + '/numNewNotifications');
+                                if (user.numNewNotifications) {
+                                    user.numNewNotifications++;
+                                }
+                                else {
+                                    user.numNewNotifications = 1;
+                                }
+                                yield _user.set(user.numNewNotifications);
+                                var key = db.generateUniqueKey();
+                                var _notification = db.child('notifications/' + key);
+                                
+                                var notification = {
+                                    type: 'Reminder',
+                                    timestamp: moment().valueOf(),
+                                    title: title || '',
+                                    description: description || '',
+                                    user: key,
+                                };
+                                
+                                if (image) {
+                                    notification.imageId = image;
+                                }
+                                
+                                yield _notification.set(notification);
+                            }
+                            
+                            if (user.sendEmailConfirmation) {
+                                yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }).catch(onerror);
 };
@@ -357,50 +421,6 @@ function processUserNotification(db, user_id, fromAddress, title, description, s
             
             if (user.sendEmailConfirmation) {
                 yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
-            }
-        }
-    }).catch(onerror);
-};
-
-function processEventCreationNotification(db, user_id, fromAddress, title, description, sentBy, image, template) {
-    return co(function*() {
-        if (config.verbose) {
-            console.log('processEventCreationNotification');
-        }
-
-        for (var i = 0; i < config.eventCreationUsers.length; i++) {
-            var memberNumber = config.eventCreationUsers[i];
-            var _user = db.child("users/").orderByChild('memberNumber').equalTo(memberNumber);
-            var user = yield _user.get();
-            if (user) {
-                var details = yield buildNotification(db, user, user_id, template, title, description, sentBy, image);
-                if (user.sendNotificationConfirmation) {
-                    //update just this attribute
-                    var _user = db.child('users/' + user_id + '/numNewNotifications');
-                    if (user.numNewNotifications) {
-                        user.numNewNotifications++;
-                    }
-                    else {
-                        user.numNewNotifications = 1;
-                    }
-                    yield _user.set(user.numNewNotifications);
-                    var key = db.generateUniqueKey();
-                    var _notification = db.child('notifications/' + key);
-                    
-                    var notification = {
-                        type: 'Reminder',
-                        timestamp: moment().valueOf(),
-                        title: title,
-                        description: description,
-                        user: user_id,
-                        imageId: image
-                    };
-                    yield _notification.set(notification);
-                }
-                
-                if (user.sendEmailConfirmation) {
-                    yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
-                }
             }
         }
     }).catch(onerror);

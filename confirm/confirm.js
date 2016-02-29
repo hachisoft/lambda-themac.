@@ -1731,7 +1731,7 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
                     if (event){
                         if (event.registrations) {
                             delete event.registrations[registration_id];
-                            atomicWrite[getFirebasePath(_event.root(),_event.toString())] = event;
+                            atomicWrite[getFirebasePath(_event.root(),_event.toString()+"/registrations")] = event.registrations;
                         }
                         if (event.interests) {
                             var interestKeys = Object.keys(event.interests);

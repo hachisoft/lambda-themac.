@@ -162,6 +162,7 @@ function processPost(db, params, algoliaApp, algoliaAdminKey) {
             if (post) {
                 post.objectName = "post";
                 post.objectID = params.id;
+                post.status = "Approved";
                 yield cardsIndex.saveObject(post);
             }
         }
