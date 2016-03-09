@@ -369,6 +369,20 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
 };
 
 
+/*function deleteObject(index, id)
+{
+    return new Promise(function (resolve, reject) {
+        index.deleteObject(id, function (error, content) {
+            if (error) {
+                reject(error);
+            }
+            index.waitTask(content.taskID, function () {
+                resolve();
+            });
+        });
+    });
+}*/
+
 function sendEmail(fromAddress, to, subject, content, message, attachment) {
     return new Promise(function (resolve, reject) {
         var attachments = [];

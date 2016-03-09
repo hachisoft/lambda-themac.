@@ -94,6 +94,9 @@ exports.handler = function (params, context) {
                 templateName = "promotion4.html";
             }
         }
+        else if (params.type === 'eventCreate') {
+            templateName = 'event_creation_confirmation.html';
+        }
 
         NodeFire.setCacheSize(10);
         NodeFire.DEBUG = true;
@@ -235,6 +238,14 @@ function processEventCreateNotification(db, event_id, fromAddress, templateBody)
         var _evt = db.child("events/" + event_id);
         var evt = yield _evt.get();
         if (evt) {
+            var eventCreator = '';
+            if (evt.creatingUser) {
+                var _creator = db.child("users/" + evt.creatingUser);
+                var creator = yield _creator.get();
+                if (creator) {
+                    eventCreator = creator.firstName + " " + creator.lastName;
+                }
+            }
             var sentBy = null;
             var image = null;
             var title = evt.title + " (" + evt.number + ') was created';
@@ -249,7 +260,17 @@ function processEventCreateNotification(db, event_id, fromAddress, templateBody)
                         var key = keys[j];
                         var user = usersArray[key];
                         if (user) {
-                            var details = yield buildNotification(db, user, key, templateBody, title, description, sentBy, image);
+                            var details = {
+                                eventNumber: evt.number,
+                                eventName: evt.title,
+                                eventCreator: eventCreator,
+                                creationTime: evt.timestamp?formatTime(evt.timestamp, "h:mm A"):'',
+                                creationDate: evt.timestamp?formatTime(evt.timestamp, "MM/DD/YY"):'',
+                                email: user.email,
+                                subject: title
+                            };
+
+                            details = fillTemplate(templateBody, details);
 
                             if (user.sendNotificationConfirmation) {
                                 //update just this attribute
@@ -261,8 +282,8 @@ function processEventCreateNotification(db, event_id, fromAddress, templateBody)
                                     user.numNewNotifications = 1;
                                 }
                                 yield _user.set(user.numNewNotifications);
-                                var key = db.generateUniqueKey();
-                                var _notification = db.child('notifications/' + key);
+                                var fbKey = db.generateUniqueKey();
+                                var _notification = db.child('notifications/' + fbKey);
                                 
                                 var notification = {
                                     type: 'Reminder',
@@ -496,8 +517,6 @@ function processInterestNotification(db, interest_id, fromAddress, title, descri
 };
 
 function buildNotification(db, user, user_id, template, title, description, sentBy, image) {
-    var mark = require('markup-js');
-        
     var details = {
         memberName: user.fullName,
         user_id: user_id,
@@ -507,11 +526,16 @@ function buildNotification(db, user, user_id, template, title, description, sent
         sentBy: sentBy,
         image: image
     };
-        
+    
+    return fillTemplate(template, details);
+}
+
+function fillTemplate(template, details)        
+{
+    var mark = require('markup-js');
     if (template) {
         details.content = mark.up(template, details);
     }
-        
     return details;
 };
 
