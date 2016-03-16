@@ -206,7 +206,12 @@ exports.handler = function (params, context) {
 
 function formatTime(epoch, fmt)
 {
-    return moment(epoch).tz('America/Los_Angeles').format(fmt);
+    return toLocalTime(epoch).format(fmt);
+}
+
+function toLocalTime(epoch)
+{
+    return moment(epoch).tz('America/Los_Angeles');
 }
 
 function formatRange(range, fmt)
@@ -1271,8 +1276,10 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
     }
     
     if (reservation.dateReserved && session.date) {
-        var dateReserved = moment.utc(reservation.dateReserved).utcOffset(-8); //since aws is utc only we have to offset to get 'smart' local aware dates
-        var reservationDate = moment.utc(session.date).utcOffset(-8);
+        var localDateReserved = toLocalTime(reservation.dateReserved); //since aws is utc only we have to offset to get 'smart' local aware dates
+        var dateReserved = moment(reservation.dateReserved);
+        var localReservationDate = toLocalTime(session.date);
+        var reservationDate = moment(session.date);
         var reservationEndDate = moment(session.endDate);
         var now = moment();
         if (reservationEndDate.isBefore(now)) {
@@ -1280,18 +1287,13 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
             AddError(errors,reservation.validationError);
             ret = false;
         }
-        var startOfReservationDate = reservationDate.clone().startOf('day');
-        var startOfDateReserved = dateReserved.clone().startOf('day');
-        if (config.verbose) {
-            console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
-            console.log('Start of date Reserved:' + formatTime(startOfDateReserved, 'MM/DD/YY @ h:mm A'));
-            console.log('Reservation date:' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A'));
-            console.log('Date Reserved:' + formatTime(dateReserved, 'MM/DD/YY @ h:mm A'));
-        }
-        var reservationWindowOpens = config.reservationWindowOpens;
+        var startOfReservationDate = localReservationDate.clone().startOf('day');
+        var startOfDateReserved = localDateReserved.clone().startOf('day');
+        var reservationWindowOpens = interestRule.timeRegistrationOpens;
         var windowOpens = startOfReservationDate.clone().add(reservationWindowOpens || 0, 'minutes');
         var dateReservedWindowOpens = startOfDateReserved.clone().add(reservationWindowOpens || 0, 'minutes');
-        var windowCloses = null;
+        
+        var windowCloses = startOfReservationDate.clone().endOf('day');
         var playBegins = null;
         var playEnds = null;
         var reservationDay = reservationDate.day();
@@ -1323,20 +1325,30 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
             ret = false;
         }
         
-        if (dateReserved.isAfter(dateReservedWindowOpens)) {
-            windowCloses = startOfReservationDate.clone().endOf('day');
-        }
-        else {
-            windowCloses = windowOpens.clone();
-        }
-
-        var reservationCreated = moment(reservation.dateReserved);
         var advancedWindow = (interestRule.advancedWindowLength || 0);
         var generalWindow = (interestRule.generalWindowLength || 0);
-        var window = advancedWindow + generalWindow;
-        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'),windowCloses.clone());
+        var window = generalWindow;
+        if (dateReserved.isAfter(dateReservedWindowOpens)) { //the advanced window is now open
+            window += advancedWindow;
+        }
+        
+        var reservationCreated = moment(reservation.dateReserved);
+        
+        
+        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowCloses.clone());
+        
+        if (config.verbose) {
+            console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
+            console.log('Start of date Reserved:' + formatTime(startOfDateReserved, 'MM/DD/YY @ h:mm A'));
+            console.log('Reservation date:' + formatTime(reservationDate, 'MM/DD/YY @ h:mm A'));
+            console.log('Date Reserved:' + formatTime(dateReserved, 'MM/DD/YY @ h:mm A'));
+            console.log('Window Opens:' + formatTime(windowOpens, 'MM/DD/YY @ h:mm A'));
+            console.log('Window Closes:' + formatTime(windowCloses, 'MM/DD/YY @ h:mm A'));
+            console.log('Reservation Range:' + formatRange(reservationRange, 'MM/DD/YY @ h:mm A'));
+        }
+        
         if (!reservationRange.contains(dateReserved)) {
-            reservation.validationError = 'Reservation ('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
+            reservation.validationError = 'Reservation ('+formatTime(reservationDate,'MM/DD/YY @ h:mm A')+' made('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
             AddError(errors,reservation.validationError);
             ret = false;
         }

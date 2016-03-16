@@ -5,6 +5,8 @@ var config = require('./config.js');
 var util = require('util');
 var Firebase = require('firebase');
 var NodeFire = require('nodefire');
+var moment = require('moment');
+
 
 var SNS = new aws.SNS();
 
@@ -105,20 +107,47 @@ function fillEmails(nodups, emails)
     return addrs.length > 0;
 }
 
+function addAuditEntry(sender, senderName, type, name, memberNumber, sentEmail, sentNotification)
+{
+    var auditEntry = {
+            'sentEmail': sentEmail,
+            'sentNotification': sentNotification,
+            'notifiedName': name,
+            'notifiedMember': memberNumber,
+            'type': type,
+        'timestamp': moment().valueOf(),
+    };
+    if (sender) {
+        auditEntry.sender = sender;
+    }
+    if (senderName) {
+        auditEntry.senderName = senderName;
+    }
+        
+    return auditEntry;
+}
+
 function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot, notifyRequest, templateName, templateBucket)
 {
     return co(function*() {
         var interests = null;
         var eventDetails = null;
+        var sender = null;
+        var senderName = null;
+        var type = null;
         if (notifyRequest) {
             interests = notifyRequest.interests;
             eventDetails = notifyRequest.eventDetails;
+            sender = notifyRequest.sender;
+            senderName = notifyRequest.senderName;
+            type = notifyRequest.type;
         }
         
         var _users = db.child("users");
         var users = yield _users.get();
         
         if (users) {
+            var auditEntries = {};
             var emails = {};
             var nodups = {};
             for (var i = 0; i < interests.length; i++) {
@@ -131,6 +160,8 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
                         var iu = interestedUsers[key].user;
                         var user = users[iu];
                         if (user && user.email) {
+                            var name = user.firstName + ' ' + user.lastName;
+                            auditEntries[iu]=addAuditEntry(sender, senderName, type, name, user.memberNumber, user.email, false);
                             nodups[user.email] = 1;
                         }
                     }
@@ -156,6 +187,8 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
                 
                 yield publishSNS(bulkARN, payload, 'json');
             }
+
+            yield writeAuditEntries(db, auditEntries);
         }
     }).catch(function (err) {
         if (config.verbose) {
@@ -190,16 +223,23 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                 promises.push(_resp.remove());
             }
         }
-
+        
+        var sender = null;
+        var senderName = null;
+        var type = null;
         var interests = null;
         if (notifyRequest) {
             interests = notifyRequest.interestIds;
+            sender = notifyRequest.sender;
+            senderName = notifyRequest.senderName;
+            type = notifyRequest.type;
         }
         
         var _users = db.child("users");
         var users = yield _users.get();
         
         if (users) {
+            var auditEntries = {};
             var emails = {};
             var nodups = {};
             for (var i = 0; i < interests.length; i++) {
@@ -212,10 +252,14 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                         var iu = interestedUsers[key].user;
                         var user = users[iu];
                         if (user) {
+                            var sentNotification = false;
+                            var sentEmail = null;
                             if (user.email && user.sendEmailConfirmation) {
+                                sentEmail = user.email;
                                 nodups[user.email] = 1;
                             }
                             if (user.sendNotificationConfirmation) {
+                                sentNotification = true;
                                 if (user.numNewNotifications) {
                                     user.numNewNotifications++;
                                 }
@@ -225,6 +269,8 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                                 var _userNumNewNotifications = db.child('users/' + iu + '/numNewNotifications');
                                 promises.push(_userNumNewNotifications.set(user.numNewNotifications));
                             }
+                            var name = user.firstName + ' ' + user.lastName;
+                            auditEntries[iu]=addAuditEntry(sender, senderName, type, name, user.memberNumber, sentEmail, sentNotification );
                         }
                     }
                 }
@@ -249,6 +295,7 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                 
                 yield publishSNS(bulkARN, payload, 'json');
             }
+            yield writeAuditEntries(db, auditEntries);
         }
         yield promises;
     }).catch(function (err) {
@@ -274,7 +321,17 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
             });
         }
         
+        var sender = null;
+        var senderName = null;
+        var type = null;
+        if (notifyRequest) {
+            sender = notifyRequest.sender;
+            senderName = notifyRequest.senderName;
+            type = notifyRequest.type;
+        }
+
         var promises = [];
+        var auditEntries = {};
         
         if (config.verbose) {
             console.log('notificationResponses');
@@ -311,6 +368,8 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
                     var _user = db.child('users/' + key + '/numNewNotifications');
                     
                     promises.push(_user.set(notifyUser.numNewNotifications));
+                    var name = notifyUser.firstName + ' ' + notifyUser.lastName;
+                    auditEntries[key] = addAuditEntry(sender,senderName,type,name,notifyUser.memberNumber,null,true);
                 }
             }
         }
@@ -326,6 +385,13 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
                 var key = notifyEmailKeys[ui];
                 var user = notifyEmails[key];
                 if (user && user.email) {
+                    if (auditEntries[key]) {
+                        auditEntries[key].sentMail = user.email;
+                    }
+                    else {
+                        var name = user.firstName + ' ' + user.lastName;
+                        auditEntries[key] = addAuditEntry(sender, senderName, type, name, user.memberNumber, user.email, false);
+                    }
                     nodups[user.email] = 1;
                 }
             }
@@ -348,12 +414,29 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
                 
                 yield publishSNS(bulkARN, payload, 'json');
             }
+            yield writeAuditEntries(db,auditEntries);
         }
         yield promises;
     }).catch(function (err) {
         if (config.verbose) {
             console.error(err.stack);
         }
+    });
+}
+
+function writeAuditEntries(db,auditEntries)
+{
+    return co(function*() {
+        
+        var atomicWrite = {};
+        
+        var keys = Object.keys(auditEntries);
+        for (var k = 0; k < keys.length; k++) {
+            var key = db.generateUniqueKey();
+            var path = 'auditNotifications/' + key;
+            atomicWrite[path] = auditEntries[keys[k]];
+        }
+        yield db.update(atomicWrite);
     });
 }
 
