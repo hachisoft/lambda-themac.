@@ -1335,7 +1335,7 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
         var reservationCreated = moment(reservation.dateReserved);
         
         
-        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowCloses.clone());
+        var reservationRange = moment.range(windowOpens.clone().subtract(window-1, 'days'), windowCloses.clone());
         
         if (config.verbose) {
             console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
@@ -1348,12 +1348,12 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
         }
         
         if (!reservationRange.contains(dateReserved)) {
-            reservation.validationError = 'Reservation ('+formatTime(reservationDate,'MM/DD/YY @ h:mm A')+' made('+formatTime(dateReserved,'MM/DD/YY @ h:mm A')+') falls outside of the '+window+ ' days when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
+            reservation.validationError = 'Reservation must be made when the reservation window is open ('+formatRange(reservationRange,'MM/DD/YY @ h:mm A')+')';
             AddError(errors,reservation.validationError);
             ret = false;
         }
         
-        var advancedReservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowOpens.clone().subtract(generalWindow, 'days'));
+        var advancedReservationRange = moment.range(windowOpens.clone().subtract(window-1, 'days'), windowOpens.clone().subtract(generalWindow-1, 'days'));
         if (advancedReservationRange.contains(reservationDate)) {
             reservation.isAdvRes = true;
         }
