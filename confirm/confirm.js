@@ -34,7 +34,7 @@ exports.handler = function (params, context) {
 
     var stage = params.stage || 'dev';
     var result = '';
-    if (params && (params.registrations || params.reservation || params.event)) {
+    if (params && (params.registrations || params.reservation || params.event || params.id || params.details)) {
         if (config.verbose) {
             console.log(params);
             //console.log(context);
@@ -78,20 +78,34 @@ exports.handler = function (params, context) {
             if (config.verbose) {
                 console.log('Auth succeeded');
             }
+
             if (params.reservation) {
                 co(function*() {
+                    if (params.provisioned) {
+                        var _sendingUser = db.child("users/" + params.provisioned);
+                        var sendingUser = yield _sendingUser.get();
+                        if (sendingUser) {
+                            params.admin = sendingUser.memberNumber;
+                            params.adminName = sendingUser.firstName + ' ' + sendingUser.lastName;
+                        }
+                    }
+                    
+                    if (config.verbose) {
+                        console.log('Auth succeeded');
+                    }
+
                     if (params.verb === 'Validate') {
-                        yield processReservationValidation(errors, db, params.reservation, params.session);
+                        yield processReservationValidation(errors, params, db, params.reservation, params.session);
                     }
                     else {
                         var _reservation = db.child('reservations/' + params.reservation);
                         var reservation = yield _reservation.get();
                         if (reservation) {
                             if (params.verb === 'Reserve' && reservation.status === 'Pending') {
-                                yield processReservation(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                                yield processReservation(errors, params, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
                             }
                             else if (params.verb === 'Cancel' || params.verb === 'Dismiss') {
-                                yield processReservationCancel(errors, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
+                                yield processReservationCancel(errors, params, params.verb, db, context, _reservation, reservation, params.reservation, fromAddress, templateBucket);
                             }
                         }
                     }
@@ -111,10 +125,19 @@ exports.handler = function (params, context) {
                 var _event = db.child('events/' + params.event);
                 var _cancellingUser = db.child('users/' + params.cancellingUser);
                 co(function*() {
+                    if (params.provisioned) {
+                        var _sendingUser = db.child("users/" + params.provisioned);
+                        var sendingUser = yield _sendingUser.get();
+                        if (sendingUser) {
+                            params.admin = sendingUser.memberNumber;
+                            params.adminName = sendingUser.firstName + ' ' + sendingUser.lastName;
+                        }
+                    }
+
                     var event = yield _event.get();
                     var cancellingUser = yield _cancellingUser.get();
                     if (event && params.verb === 'CancelEvent') {
-                        yield processEventCancel(errors, params.verb, db, context, _event, event, params.event, cancellingUser, params.cancellingUser, fromAddress, templateBucket);
+                        yield processEventCancel(errors, params, params.verb, db, context, _event, event, params.event, cancellingUser, params.cancellingUser, fromAddress, templateBucket);
                     }
                     if (errors.length > 0) {
                         context.fail(JSON.stringify(errors));
@@ -129,7 +152,7 @@ exports.handler = function (params, context) {
                     }
                 });
             }
-            else {
+            else if (params.registrations) {
                 var totalCost = params.totalCost || null;
                 var adultCount = params.adultCount || null;
                 var juniorCount = params.juniorCount || null;
@@ -145,6 +168,14 @@ exports.handler = function (params, context) {
                     }
                 }
                 co(function*() {
+                    if (params.provisioned) {
+                        var _sendingUser = db.child("users/" + params.provisioned);
+                        var sendingUser = yield _sendingUser.get();
+                        if (sendingUser) {
+                            params.admin = sendingUser.memberNumber;
+                            params.adminName = sendingUser.firstName + ' ' + sendingUser.lastName;
+                        }
+                    }
                     var registrations = yield promises;
                     for (var k = 0; k < registrations.length; k++) {
                         var registration = registrations[k];
@@ -154,28 +185,28 @@ exports.handler = function (params, context) {
                             if (params.verb === "Register") {
                                 if (registration.status === "Pending") {
                                     noneMatched = false;
-                                    yield processRegistration(errors, params.verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
+                                    yield processRegistration(errors, params, params.verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
                                 }
                                 else if (registration.status === "Wishlist") {
                                     noneMatched = false;
-                                    yield processWishlist(errors, db, context, registration);
+                                    yield processWishlist(errors, params, db, context, registration);
                                 }
                             }
                             else if (params.verb === "Cancel" || params.verb === "CancelEvent" || params.verb === 'Dismiss') {
                                 noneMatched = false;
-                                yield processRegistrationCancellation(errors, params.verb, params.cancellingUser, db, context, registration_id, _registration, registration, fromAddress, templateBucket);
+                                yield processRegistrationCancellation(errors, params, params.verb, params.cancellingUser, db, context, registration_id, _registration, registration, fromAddress, templateBucket);
                             }
                             else if (params.verb === "Modify" && registration.status === "Reserved") {
                                 noneMatched = false;
-                                yield processModification(errors, params.verb,db, context, _registration, registration, fromAddress, templateBucket);
+                                yield processModification(errors, params, params.verb, db, context, _registration, registration, fromAddress, templateBucket);
                             }
                             else if (params.verb === "Waitlist" && registration.status === "Pending" && registration.isOnWaitlist) {
                                 noneMatched = false;
-                                yield processWaitlist(errors,params.verb,db, context, _registration, registration, fromAddress, templateBucket);
+                                yield processWaitlist(errors, params, params.verb, db, context, _registration, registration, fromAddress, templateBucket);
                             }
                             else if (params.verb === "WaitlistModify" && registration.status === "Pending" && registration.isOnWaitlist) {
                                 noneMatched = false;
-                                yield processWaitlistModify(errors, params.verb,db, context, _registration, registration, fromAddress, templateBucket);
+                                yield processWaitlistModify(errors, params, params.verb, db, context, _registration, registration, fromAddress, templateBucket);
                             }
                         }
                     }
@@ -184,6 +215,21 @@ exports.handler = function (params, context) {
                     }
                     else if (noneMatched) {
                         context.fail('No registrations matched');
+                    }
+                    else {
+                        context.succeed({});
+                    }
+                }).catch(function (err) {
+                    if (config.verbose) {
+                        console.error(err.stack);
+                    }
+                });
+            }
+            else {
+                co(function*() {
+                    yield addMemberProfileUpdate(errors, db, params);
+                    if (errors.length > 0) {
+                        context.fail(JSON.stringify(errors));
                     }
                     else {
                         context.succeed({});
@@ -221,7 +267,37 @@ function formatRange(range, fmt)
     return from + ' - ' + to;
 }
 
-function processWishlist(errors,db, context, registration)
+function addMemberProfileUpdate(errors, db, params) {
+    return co(function*() {
+        var update = {
+            type: params.verb,
+            timestamp: moment().valueOf()
+        };
+        if (params.provisioned) {
+            var _updatingUser = db.child("users/" + params.provisioned);
+            var updatingUser = yield _updatingUser.get();
+            if (updatingUser) {
+                update.updatingMember = updatingUser.memberNumber;
+                update.updatingMemberName = updatingUser.firstName + ' ' + updatingUser.lastName;
+            }
+        }
+        if (params.id) {
+            update.id = params.id;
+        }
+        if (params.details) {
+            update.details = {};
+            Object.keys(params.details).forEach(function (key) {
+                update.details[key] = params.details[key];
+            });
+        }
+        var _profileUpdates = db.child('profileUpdates/');
+        yield _profileUpdates.push(update);
+    }).catch(function (err) {
+        console.log(err);
+    });
+}
+
+function processWishlist(errors, params, db, context, registration)
 {
     return co(function*() {
         if (registration.registeringUser) {
@@ -332,7 +408,7 @@ function getReservationDetails(db, reservation, session, reservation_id, params)
     });
 }
 
-function processReservationValidation(errors, db, reservation, session)
+function processReservationValidation(errors, params, db, reservation, session)
 {
     return co(function*() {
         var params = {
@@ -351,11 +427,14 @@ function processReservationValidation(errors, db, reservation, session)
     });
 }
 
-function processReservation(errors,verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
+function processReservation(errors, reservationParams, verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
-    if (config.verbose) { console.log("processReservation"); }
+    if (config.verbose) {
+        console.log("processReservation");
+        console.log(reservationParams);
+    }
     return co(function*() {
         var _session = db.child('sessions/' + reservation.session);
         var session = yield _session.get();
@@ -387,25 +466,25 @@ function processReservation(errors,verb, db, context, _reservation, reservation,
                 reservation.status = "Reserved";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
-                yield updateReservation(errors,verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
-                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                yield updateReservation(errors, reservationParams, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                var details = yield buildConfirmation(errors, params, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                 //send each person on the confirmation their conf
                 if (details) {
-                    yield sendConfirmation(errors, db, reservationUser, reservation.reservationUser, details, fromAddress);
+                    yield sendConfirmation(errors, params, db, reservationUser, reservation.reservationUser, details, fromAddress);
                 }
                 
                 if (!primaryMemberConfirmation) { //now send one to the reserving user also
-                    details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
+                    details = yield buildConfirmation(errors, params, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket,fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
-                        yield sendConfirmation(errors, db, reservingUser, reservation.reservingUser, details, fromAddress);
+                        yield sendConfirmation(errors, params, db, reservingUser, reservation.reservingUser, details, fromAddress);
                     }
                 }
             }
             else {
                 reservation.status = 'Error';
                 reservation.isAdvRes = false;
-                yield updateReservation(errors, 'Error-Reserve', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                yield updateReservation(errors, reservationParams, 'Error-Reserve', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
             }
         }
     }).catch(function (err) {
@@ -413,7 +492,7 @@ function processReservation(errors,verb, db, context, _reservation, reservation,
     });
 };
 
-function processReservationCancel(errors, verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
+function processReservationCancel(errors, reservationParams, verb, db, context, _reservation, reservation, reservation_id, fromAddress, templateBucket) {
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
@@ -448,31 +527,31 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
         var userReservationsForInterest = params.userReservationsForInterest;
 
         if (session && reservationUser) {
-            if (validateReservationCancel(errors,session,reservation_id,location, interest,reservingUser, reservationUser, reservation)) {
+            if (validateReservationCancel(errors, params, session, reservation_id, location, interest, reservingUser, reservationUser, reservation)) {
                 reservation.status = "Cancelled";
                 
                 var primaryMemberConfirmation = reservation.reservingUser === reservation.reservationUser;
-                var details = yield buildConfirmation(errors, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket,fromAddress);
+                var details = yield buildConfirmation(errors, params, verb, db, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket,fromAddress);
                 
-                yield updateReservation(errors, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                yield updateReservation(errors, reservationParams, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
                 
                 if (verb !== 'Dismiss') {
                     //send each person on the confirmation their conf
                     if (details) {
-                        yield sendConfirmation(errors, db, reservationUser, reservation.reservationUser, details, fromAddress);
+                        yield sendConfirmation(errors, params, db, reservationUser, reservation.reservationUser, details, fromAddress);
                     }
                     
                     if (!primaryMemberConfirmation) { //now send one to the reserving user also
-                        details = yield buildConfirmation(errors, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                        details = yield buildConfirmation(errors, params, verb, db, reservingUser, reservation.reservingUser, null, null, null, reservation, reservation_id, null, location.name, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                         //send each person on the confirmation their conf
                         if (details) {
-                            yield sendConfirmation(errors, db, reservingUser, reservation.reservingUser, details, fromAddress);
+                            yield sendConfirmation(errors, params, db, reservingUser, reservation.reservingUser, details, fromAddress);
                         }
                     }
                 }
             }
             else {
-                yield updateReservation(errors, 'Error-Cancel', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
+                yield updateReservation(errors, reservationParams, 'Error-Cancel', db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
             }
         }
     }).catch(function (err) {
@@ -480,12 +559,12 @@ function processReservationCancel(errors, verb, db, context, _reservation, reser
     });
 };
 
-function validateReservationCancel(errors, session, reservation_id, location, interest, reservingUser, reservationUser, reservation)
+function validateReservationCancel(errors, params, session, reservation_id, location, interest, reservingUser, reservationUser, reservation)
 {
     return true;
 }
 
-function updateReservation(errors, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest) {
+function updateReservation(errors, params, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest) {
     return co(function*() {
         var promises = [];
         var _auditReservations = db.child('auditReservations')    
@@ -495,8 +574,17 @@ function updateReservation(errors, verb, db, _reservation, reservation, reservat
             'validationError': reservation.validationError || '',
             'reservation': reservation_id
         };
+        
+        if (params.admin) {
+            auditEntry.admin = params.admin;
+        }
+        if (params.adminName) {
+            auditEntry.adminName = params.adminName;
+        }
+
         if (config.verbose) {
             console.log("updateReservation verb:" + verb);
+            console.log(params);
         }
         if (verb === 'Cancel' || verb === 'Dismiss') {
             if (reservation.asset) {
@@ -660,7 +748,7 @@ function updateReservation(errors, verb, db, _reservation, reservation, reservat
     });
 };
 
-function processRegistrationCancellation(errors, verb, cancellingUser_id, db, context, registration_id, _registration, registration, fromAddress, templateBucket) {
+function processRegistrationCancellation(errors, params, verb, cancellingUser_id, db, context, registration_id, _registration, registration, fromAddress, templateBucket) {
     var totalCost = null;
     var adultCount = null;
     var juniorCount = null;
@@ -696,40 +784,40 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
             
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
-            if (validateCancellation(errors, db, cancellingUser, registration, event, fee)) {
+            if (validateCancellation(errors, params, db, cancellingUser, registration, event, fee)) {
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
-                yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
                 if (event && verb !=='Dismiss') {
                     if (event.sendMemberNotifications) {
                         if (registeredUser) {
-                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            var details = yield buildConfirmation(errors, params, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
-                                yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
+                                yield sendConfirmation(errors, params, db, registeredUser, registration.registeredUser, details, fromAddress);
                             }
                         }
                         
                         if (!primaryMemberConfirmation) { //now send one to the registering user also
-                            details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                            details = yield buildConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
-                                yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                                yield sendConfirmation(errors, params, db, registeringUser, registration.registeringUser, details, fromAddress);
                             }
                         }
                     }
                     if (event.sendStaffNotifications) {
                         if (isAdmin(cancellingUser) && registeredUser && cancellingUser_id !== registration.registeringUser) {
-                            var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                            var details = yield buildConfirmation(errors, params, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
-                                yield sendConfirmation(errors, db, cancellingUser, cancellingUser_id, details, fromAddress);
+                                yield sendConfirmation(errors, params, db, cancellingUser, cancellingUser_id, details, fromAddress);
                             }
                         }
                     }
                 }
             }
             else {
-                yield updateRegistration(errors, 'Error-Cancel', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, 'Error-Cancel', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
             }
         }
     }).catch(function (err) {
@@ -740,13 +828,13 @@ function processRegistrationCancellation(errors, verb, cancellingUser_id, db, co
     });
 };
 
-function processEventCancel(errors, verb, db, context, _event, event, event_id, cancellingUser, cancellingUser_id, fromAddress, templateBucket) {
+function processEventCancel(errors, params, verb, db, context, _event, event, event_id, cancellingUser, cancellingUser_id, fromAddress, templateBucket) {
     if (config.verbose) {
         console.log("processEventCancellation");
     }
     return co(function*() {
         if (cancellingUser && event) {
-            if (validateEventCancellation(errors, db, cancellingUser, event)) {
+            if (validateEventCancellation(errors, params, db, cancellingUser, event)) {
                 var eventName = event.title || '';
                 var eventNumber = event.number || '';
                 var message = eventNumber + '\n';
@@ -754,7 +842,7 @@ function processEventCancel(errors, verb, db, context, _event, event, event_id, 
                 if (cancellingUser.email && event.sendStaffNotifications) {
                     yield sendEmail(fromAddress, cancellingUser.email, eventName + ' is cancelled', null, message, null);
                 }
-                yield archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUser);
+                yield archiveAndDeleteEvent(errors, params, db, _event, event, event_id, cancellingUser);
             }
         }
     }).catch(function (err) {
@@ -762,7 +850,7 @@ function processEventCancel(errors, verb, db, context, _event, event, event_id, 
     });
 };
 
-function validateEventCancellation(errors, db, cancellingUser, event)
+function validateEventCancellation(errors, params, db, cancellingUser, event)
 {
     if (cancellingUser) {
         if (isAdmin(cancellingUser)) {
@@ -772,7 +860,7 @@ function validateEventCancellation(errors, db, cancellingUser, event)
     return false;
 }
 
-function archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUser)
+function archiveAndDeleteEvent(errors, params, db, _event, event, event_id, cancellingUser)
 {
     if (config.verbose) {
         console.log("archiveAndDeleteEvent");
@@ -930,7 +1018,7 @@ function archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUs
             
             var registrations = yield registrationPromises;
             if (registrations) {
-                yield deleteRegistrations(errors, db, registrations, _registrations, cancelledEvent, false, false);
+                yield deleteRegistrations(errors, params, db, registrations, _registrations, cancelledEvent, false, false);
             }
         }
         
@@ -948,7 +1036,7 @@ function archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUs
             
             var sessions = yield sessionPromises;
             if (sessions) {
-                yield deleteSessions(errors, db, sessions, _sessions);
+                yield deleteSessions(errors, params, db, sessions, _sessions);
             }
         }
 
@@ -965,7 +1053,7 @@ function archiveAndDeleteEvent(errors, db, _event, event, event_id, cancellingUs
     });
 }
 
-function deleteSessions(errors,db, sessions, _sessions) {
+function deleteSessions(errors, params, db, sessions, _sessions) {
     return co(function*() {
         var promises = [];
         for (var k = 0; k < sessions.length; k++) {
@@ -1005,7 +1093,7 @@ function deleteSessions(errors,db, sessions, _sessions) {
     });
 }
 
-function deleteRegistrations(errors, db, registrations, _registrations, cancelledEvent, deleteFee, deleteEvent)
+function deleteRegistrations(errors, params, db, registrations, _registrations, cancelledEvent, deleteFee, deleteEvent)
 {
     return co(function*() {
         if (cancelledEvent) {
@@ -1092,17 +1180,17 @@ function deleteRegistrations(errors, db, registrations, _registrations, cancelle
     });
 }
 
-function processModification(errors, verb, db, context, _registration, registration, fromAddress, templateBucket) {
+function processModification(errors, params, verb, db, context, _registration, registration, fromAddress, templateBucket) {
 };
 
-function processWaitlist(errors, verb, db, context, _registration, registration, fromAddress, templateBucket) {
+function processWaitlist(errors, params, verb, db, context, _registration, registration, fromAddress, templateBucket) {
 };
 
-function processWaitlistModification(errors, verb, db, context, _registration, registration, fromAddress, templateBucket) {
+function processWaitlistModification(errors, params, verb, db, context, _registration, registration, fromAddress, templateBucket) {
 };
 
 
-function processRegistration(errors, verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket) {
+function processRegistration(errors, params, verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket) {
     return co(function*() {
         if (config.verbose) { console.log("processRegistration"); }
         var _event = db.child('events/' + registration.event);
@@ -1128,7 +1216,7 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
             
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
-            if (validateRegistration(errors, db, registeredUser, registeringUser, registration, event)) {
+            if (validateRegistration(errors, params, db, registeredUser, registeringUser, registration, event)) {
                 registration.status = "Reserved";
                 registration.dateRegistered = moment().valueOf();
                 if (!event.noRegistrationRequired) {
@@ -1148,33 +1236,33 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
                         registration.isOnWaitlist = true;
                         verb = "Waitlist"; //change the verb so the correct template is sent out
                         if (event.creatingUser) {
-                            yield sendEventFull(errors, db, event, fromAddress);
+                            yield sendEventFull(errors, params, db, event, fromAddress);
                         }
                     }
                 }
                 var primaryMemberConfirmation = registration.registeringUser === registration.registeredUser;
-                yield updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
                 if (registeredUser && event.sendMemberNotifications) {
-                    var details = yield buildConfirmation(errors, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
+                    var details = yield buildConfirmation(errors, params, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
-                        yield sendConfirmation(errors, db, registeredUser, registration.registeredUser, details, fromAddress);
+                        yield sendConfirmation(errors, params, db, registeredUser, registration.registeredUser, details, fromAddress);
                     }
                 }
                         
                 if (!primaryMemberConfirmation) { //now send one to the registering user also
                     if ((isAdmin(registeringUser) && event.sendStaffNotifications) || event.sendMemberNotifications){
-                        details = yield buildConfirmation(errors, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                        details = yield buildConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                         //send each person on the confirmation their conf
                         if (details) {
-                            yield sendConfirmation(errors, db, registeringUser, registration.registeringUser, details, fromAddress);
+                            yield sendConfirmation(errors, params, db, registeringUser, registration.registeringUser, details, fromAddress);
                         }
                     }
                 }
             }
             else {
                 registration.status = 'Error';
-                yield updateRegistration(errors, 'Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, 'Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
             }
         }
     }).catch(function (err) {
@@ -1184,7 +1272,7 @@ function processRegistration(errors, verb, db, context, registration_id, _regist
 };
 
 
-function validateCancellation(errors, db, cancellingUser, registration, event, fee) {
+function validateCancellation(errors, params, db, cancellingUser, registration, event, fee) {
     
     if (!event) {
         AddError(errors,'Event was not valid');
@@ -1337,7 +1425,7 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
         var reservationCreated = moment(reservation.dateReserved);
         
         
-        var reservationRange = moment.range(windowOpens.clone().subtract(window-1, 'days'), windowCloses.clone());
+        var reservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowCloses.clone());
         
         if (config.verbose) {
             console.log('Start of reservation date:' + formatTime(startOfReservationDate, 'MM/DD/YY @ h:mm A'));
@@ -1355,7 +1443,7 @@ function validateReservation(dontEnforce, errors, db, reservationUser, reserving
             ret = false;
         }
         
-        var advancedReservationRange = moment.range(windowOpens.clone().subtract(window-1, 'days'), windowOpens.clone().subtract(generalWindow-1, 'days'));
+        var advancedReservationRange = moment.range(windowOpens.clone().subtract(window, 'days'), windowOpens.clone().subtract(generalWindow-1, 'days'));
         if (advancedReservationRange.contains(reservationDate)) {
             reservation.isAdvRes = true;
         }
@@ -1516,7 +1604,7 @@ function isAdmin(user)
     return false;
 }
 
-function validateRegistration(errors, db, user, registeringUser, registration, event) {
+function validateRegistration(errors, params, db, user, registeringUser, registration, event) {
     if (!event)
         return false;
     if (!registration)
@@ -1666,7 +1754,7 @@ function getFirebasePath(root, path)
     return path.replace(root, '');
 }
 
-function updateRegistration(errors, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
+function updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
     if (config.verbose) {
         console.log('updateRegistration:'+verb);
     }
@@ -1680,6 +1768,14 @@ function updateRegistration(errors, verb, db, registration_id, _registration, re
             'validationError': registration.validationError || '',
             'registration': registration_id
         };
+        
+        if (params.admin) {
+            auditEntry.admin = params.admin;
+        }
+        if (params.adminName) {
+            auditEntry.adminName = params.adminName;
+        }
+
         if (verb === 'Cancel' || verb ==='Dismiss' || verb === 'CancelEvent') {
             if (registration) {
                 if (!event.noRegistrationRequired && registration.status === 'Reserved') {
@@ -1895,7 +1991,7 @@ function sendEmail(fromAddress, to, subject, content,message,attachment) {
     });
 }
 
-function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
+function sendConfirmation(errors, params, db, user, user_id, details, fromAddress) {
     return co(function*() {
         if (user && details && fromAddress) {
             if (config.verbose) { console.log("sendConfirmation from " + fromAddress + " to " + user.email); }
@@ -1938,7 +2034,7 @@ function sendConfirmation(errors, db, user, user_id, details, fromAddress) {
     });
 };
 
-function sendEventFull(errors, db, event, fromAddress){
+function sendEventFull(errors, params, db, event, fromAddress){
     return co(function*() {
         var _creatingUser = db.child('users/' + event.creatingUser);
         var creatingUser = yield _creatingUser.get();
@@ -1997,7 +2093,7 @@ function addLine(text, line)
     return text + (line + "<br>");
 }
 
-function buildConfirmation(errors, verb, db, user, user_id, event, event_id, registration, reservation, reservation_id, confirmation, location, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress) {
+function buildConfirmation(errors, params, verb, db, user, user_id, event, event_id, registration, reservation, reservation_id, confirmation, location, totalCost, adultCount, juniorCount, primaryMemberConfirmation, templateBucket, fromAddress) {
     if (config.verbose) {
         console.log("buildConfirmation");
     }

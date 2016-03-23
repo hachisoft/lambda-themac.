@@ -111,8 +111,8 @@ exports.handler = function (params, context) {
                     var _sendingUser = db.child("users/" + params.provisioned);
                     var sendingUser = yield _sendingUser.get();
                     if (sendingUser) {
-                        params.sender = sendingUser.memberNumber;
-                        params.senderName = sendingUser.firstName + ' ' + sendingUser.lastName;
+                        params.admin = sendingUser.memberNumber;
+                        params.adminName = sendingUser.firstName + ' ' + sendingUser.lastName;
                     }
                 }
                 if (params.type === 'interest') {
@@ -468,11 +468,11 @@ function processUserNotification(db, user_id, fromAddress, params, template) {
                     'type': params.type,
                     'timestamp': moment().valueOf(),
                 };
-                if (params.sender) {
-                    auditEntry.sender = params.sender;
+                if (params.admin) {
+                    auditEntry.admin = params.admin;
                 }
-                if (params.senderName) {
-                    auditEntry.senderName = params.senderName;
+                if (params.adminName) {
+                    auditEntry.adminName = params.adminName;
                 }
                 yield _auditNotifications.push(auditEntry);
             }

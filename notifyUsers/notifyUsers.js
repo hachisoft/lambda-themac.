@@ -107,7 +107,7 @@ function fillEmails(nodups, emails)
     return addrs.length > 0;
 }
 
-function addAuditEntry(sender, senderName, type, name, memberNumber, sentEmail, sentNotification)
+function addAuditEntry(admin, adminName, type, name, memberNumber, sentEmail, sentNotification)
 {
     var auditEntry = {
             'sentEmail': sentEmail,
@@ -117,11 +117,11 @@ function addAuditEntry(sender, senderName, type, name, memberNumber, sentEmail, 
             'type': type,
         'timestamp': moment().valueOf(),
     };
-    if (sender) {
-        auditEntry.sender = sender;
+    if (admin) {
+        auditEntry.admin = admin;
     }
-    if (senderName) {
-        auditEntry.senderName = senderName;
+    if (adminName) {
+        auditEntry.adminName = adminName;
     }
         
     return auditEntry;
@@ -132,14 +132,14 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
     return co(function*() {
         var interests = null;
         var eventDetails = null;
-        var sender = null;
-        var senderName = null;
+        var admin = null;
+        var adminName = null;
         var type = null;
         if (notifyRequest) {
             interests = notifyRequest.interests;
             eventDetails = notifyRequest.eventDetails;
-            sender = notifyRequest.sender;
-            senderName = notifyRequest.senderName;
+            admin = notifyRequest.admin;
+            adminName = notifyRequest.adminName;
             type = notifyRequest.type;
         }
         
@@ -161,7 +161,7 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
                         var user = users[iu];
                         if (user && user.email) {
                             var name = user.firstName + ' ' + user.lastName;
-                            auditEntries[iu]=addAuditEntry(sender, senderName, type, name, user.memberNumber, user.email, false);
+                            auditEntries[iu]=addAuditEntry(admin, adminName, type, name, user.memberNumber, user.email, false);
                             nodups[user.email] = 1;
                         }
                     }
@@ -224,14 +224,14 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
             }
         }
         
-        var sender = null;
-        var senderName = null;
+        var admin = null;
+        var adminName = null;
         var type = null;
         var interests = null;
         if (notifyRequest) {
             interests = notifyRequest.interestIds;
-            sender = notifyRequest.sender;
-            senderName = notifyRequest.senderName;
+            admin = notifyRequest.admin;
+            adminName = notifyRequest.adminName;
             type = notifyRequest.type;
         }
         
@@ -270,7 +270,7 @@ function processClosureNotification(db, verb, stage, bulkARN, fromAddress, linkR
                                 promises.push(_userNumNewNotifications.set(user.numNewNotifications));
                             }
                             var name = user.firstName + ' ' + user.lastName;
-                            auditEntries[iu]=addAuditEntry(sender, senderName, type, name, user.memberNumber, sentEmail, sentNotification );
+                            auditEntries[iu]=addAuditEntry(admin, adminName, type, name, user.memberNumber, sentEmail, sentNotification );
                         }
                     }
                 }
@@ -321,12 +321,12 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
             });
         }
         
-        var sender = null;
-        var senderName = null;
+        var admin = null;
+        var adminName = null;
         var type = null;
         if (notifyRequest) {
-            sender = notifyRequest.sender;
-            senderName = notifyRequest.senderName;
+            admin = notifyRequest.admin;
+            adminName = notifyRequest.adminName;
             type = notifyRequest.type;
         }
 
@@ -369,7 +369,7 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
                     
                     promises.push(_user.set(notifyUser.numNewNotifications));
                     var name = notifyUser.firstName + ' ' + notifyUser.lastName;
-                    auditEntries[key] = addAuditEntry(sender,senderName,type,name,notifyUser.memberNumber,null,true);
+                    auditEntries[key] = addAuditEntry(admin,adminName,type,name,notifyUser.memberNumber,null,true);
                 }
             }
         }
@@ -390,7 +390,7 @@ function processEmergencyNotification(db, verb, stage, bulkARN, fromAddress, lin
                     }
                     else {
                         var name = user.firstName + ' ' + user.lastName;
-                        auditEntries[key] = addAuditEntry(sender, senderName, type, name, user.memberNumber, user.email, false);
+                        auditEntries[key] = addAuditEntry(admin, adminName, type, name, user.memberNumber, user.email, false);
                     }
                     nodups[user.email] = 1;
                 }
