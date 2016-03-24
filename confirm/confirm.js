@@ -282,7 +282,7 @@ function addMemberProfileUpdate(errors, db, params) {
             }
         }
         if (params.id) {
-            update.id = params.id;
+            update.reference = params.id;
         }
         if (params.details) {
             update.details = {};
