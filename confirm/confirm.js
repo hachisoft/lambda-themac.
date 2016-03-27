@@ -18,7 +18,7 @@ var s3 = new S3();
 var nodemailer = require('nodemailer');
 var ses = require('nodemailer-ses-transport'); 
 
-
+var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 var transporter = nodemailer.createTransport(ses({
     region: 'us-west-2',
     rateLimit: 20
@@ -366,16 +366,19 @@ function getReservationDetails(db, reservation, session, reservation_id, params)
                     if (reservation_id && key === reservation_id) {
                         continue;
                     }
-                    if (_urfi[key].interest === reservation.interest) {
-                        var urfi = _urfi [key];
-                        var _urfiSession = db.child('sessions/' + urfi.session);
-                        var urfiSession = yield _urfiSession.get();
-                        if (urfiSession) {
-                            params.userReservationsForInterest.push({
-                                'id': key,
-                                'value': urfi,
-                                'session': urfiSession
-                            });
+                    var urfi = _urfi [key];
+                    if (urfi.interest === reservation.interest) {
+                        if (urfi.status === 'Reserved') //only include reserved reservations
+                        {
+                            var _urfiSession = db.child('sessions/' + urfi.session);
+                            var urfiSession = yield _urfiSession.get();
+                            if (urfiSession) {
+                                params.userReservationsForInterest.push({
+                                    'id': key,
+                                    'value': urfi,
+                                    'session': urfiSession
+                                });
+                            }
                         }
                     }
                 }
@@ -840,7 +843,7 @@ function processEventCancel(errors, params, verb, db, context, _event, event, ev
                 var message = eventNumber + '\n';
                 message += eventName + ' has been cancelled.\n';
                 if (cancellingUser.email && event.sendStaffNotifications) {
-                    yield sendEmail(fromAddress, cancellingUser.email, eventName + ' is cancelled', null, message, null);
+                    yield sendEmail(fromAddress, cancellingUser.email, eventName + ' is cancelled', null, message, []);
                 }
                 yield archiveAndDeleteEvent(errors, params, db, _event, event, event_id, cancellingUser);
             }
@@ -1959,12 +1962,8 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
     });
 };
 
-function sendEmail(fromAddress, to, subject, content,message,attachment) {
+function sendEmail(fromAddress, to, subject, content,message,attachments) {
     return new Promise(function (resolve, reject) {
-        var attachments = [];
-        if (attachment) {
-            attachments.push(attachment);
-        }
         transporter.sendMail({
             from: fromAddress,
             to: to,
@@ -2026,7 +2025,7 @@ function sendConfirmation(errors, params, db, user, user_id, details, fromAddres
             }
             
             if (user.sendEmailConfirmation) {
-                yield sendEmail(fromAddress, details.email, details.subject, details.content,null,details.attachment);
+                yield sendEmail(fromAddress, details.email, details.subject, details.content,null,details.attachments);
             }
         }
     }).catch(function (err) {
@@ -2051,7 +2050,7 @@ function sendEventFull(errors, params, db, event, fromAddress){
             message += eventName + ' has reached its capacity of ' + event.capacity + '.\n';
             message += 'Members are no longer able to register because the event does not allow waitlisting.';
         }
-        yield sendEmail(fromAddress, creatingUser.email, eventName + ' is full', null, message, null);
+        yield sendEmail(fromAddress, creatingUser.email, eventName + ' is full', null, message, []);
     }).catch(function (err) {
         console.log(err);  
     });
@@ -2069,7 +2068,7 @@ function download(url) {
             // so check the status
             if (req.status == 200) {
                 // Resolve the promise with the response text
-                resolve(req.response);
+                resolve(req.responseText);
             }
             else {
                 // Otherwise reject with the status text
@@ -2099,76 +2098,140 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
     }
     return co(function*() {
         var mark = require('markup-js');
-        
+        var attachments = [];
         var template = null;
         var subject = "";
         var confirmationNotificationTitle = "";
         var confirmationNotificationDescription = "";
+        var extraInfo = null;
+        
+        var templateName = "confirmation.html";
+        subject = "MAC Registration Confirmation";
+        if (verb === 'Cancel') {
+            subject = "MAC Registration Cancellation";
+            templateName = "cancellation.html";
+            if (reservation) {
+                subject = "MAC Reservation Cancellation";
+                templateName = "reservation_cancellation.html";
+            }
+        }
+        else if (verb === 'CancelEvent') {
+            subject = "MAC Event Cancellation";
+            templateName = "event_cancellation.html";
+        }
+        else if (verb === 'Reserve') {
+            subject = "MAC Reservation Confirmation";
+            templateName = "reservation_confirmation.html";
+        }
+        else if (verb === 'Modify') {
+            subject = "MAC Registration Modification";
+            templateName = "modification.html";
+            if (reservation) {
+                subject = "MAC Reservation Modification";
+                templateName = "reservation_modification.html";
+            }
+        }
+        else if (verb === 'Waitlist') {
+            templateName = "waitlist.html";
+        }
+        else if (verb === 'WaitlistModify') {
+            templateName = "waitlistmodification.html";
+        }
+
         if (confirmation) {
-            if (confirmation.confirmationTemplate) {
-                if (verb === 'Register') {
+            if (verb === 'Register') {
+                if (confirmation.confirmationTemplate) {
                     template = yield download(confirmation.confirmationTemplate);
                 }
-                else if (verb === 'Reserve') {
-                    template = yield download(confirmation.confirmationTemplate);
+                if (confirmation.confirmationAttachments) {
+                    if (config.verbose) {
+                        console.log(confirmation);
+                    }
+                    for (var k = 0; k < confirmation.confirmationAttachments.length; k++) {
+                        var att = confirmation.confirmationAttachments[k];
+                        if (att && att.url) {
+                            attachments.push({
+                                path: att.url,
+                                filename: att.name
+                            });
+                        }
+                    }
                 }
-            }
-            else if (confirmation.cancellationTemplate && verb === 'Cancel') {
-                template = yield download(confirmation.cancellationTemplate);
-            }
-            else if (confirmation.modificationTemplate && verb === 'Modify') {
-                template = yield download(confirmation.modificationTemplate);
+                if (confirmation.confirmationSubject) {
+                    subject = confirmation.confirmationSubject;
                 }
-            else if (confirmation.waitlistTemplate && verb === 'Waitlist') {
-                template = yield download(confirmation.waitlistTemplate);
-            }
-            else if (confirmation.waitlistModificationTemplate && verb === 'WaitlistModify') {
-                template = yield download(confirmation.waitlistModificationTemplate);
-            }
-            
-            if (confirmation.confirmationSubject) {
-                subject = confirmation.confirmationSubject;
-            }
-        } else {
-            var templateName = "confirmation.html";
-            subject = "MAC Registration Confirmation";
-            if (verb === 'Cancel') {
-                subject = "MAC Registration Cancellation";
-                templateName = "cancellation.html";
-                if (reservation) {
-                    subject = "MAC Reservation Cancellation";
-                    templateName = "reservation_cancellation.html";
+
+                if (confirmation.confirmationExtraInfo) {
+                    extraInfo = confirmation.confirmationExtraInfo;
                 }
-            }
-            else if (verb === 'CancelEvent') {
-                subject = "MAC Event Cancellation";
-                templateName = "event_cancellation.html";
             }
             else if (verb === 'Reserve') {
-                subject = "MAC Reservation Confirmation";
-                templateName = "reservation_confirmation.html";
+                if (confirmation.confirmationTemplate) {
+                    template = yield download(confirmation.confirmationTemplate);
+                }
+                if (confirmation.confirmationAttachments) {
+                    for (var k = 0; k < confirmation.confirmationAttachments.length; k++) {
+                        var att = confirmation.confirmationAttachments[k];
+                        if (att && att.url) {
+                            attachments.push({
+                                path: att.url,
+                                filename: att.name
+                            });
+                        }
+                    }
+                }
+                if (confirmation.confirmationExtraInfo) {
+                    extraInfo = confirmation.confirmationExtraInfo;
+                }
+                if (confirmation.confirmationSubject) {
+                    subject = confirmation.confirmationSubject;
+                }
+            }
+            else if (verb === 'Cancel') {
+                if (confirmation.cancellationTemplate) {
+                    template = yield download(confirmation.cancellationTemplate);
+                }
             }
             else if (verb === 'Modify') {
-                subject = "MAC Registration Modification";
-                templateName = "modification.html";
-                if (reservation) {
-                    subject = "MAC Reservation Modification";
-                    templateName = "reservation_modification.html";
+                if (confirmation.modificationTemplate) {
+                    template = yield download(confirmation.modificationTemplate);
+                }
+                if (confirmation.modificationAttachments) {
+                    for (var k = 0; k < confirmation.modificationAttachments.length; k++) {
+                        var att = confirmation.modificationAttachments[k];
+                        if (att && att.url) {
+                            attachments.push({
+                                path: att.url,
+                                filename: att.name
+                            });
+                        }
+                    }
+                }
+                if (confirmation.modificationExtraInfo) {
+                    extraInfo = confirmation.modificationExtraInfo;
                 }
             }
             else if (verb === 'Waitlist') {
-                templateName = "waitlist.html";
+                if (confirmation.waitlistTemplate) {
+                    template = yield download(confirmation.waitlistTemplate);
+                }
             }
             else if (verb === 'WaitlistModify') {
-                templateName = "waitlistmodification.html";
+                if (confirmation.waitlistModificationTemplate){
+                    template = yield download(confirmation.waitlistModificationTemplate);
+                }
             }
+        }
+        
+        if (templateName && template === null)
+        {    
             template=yield s3.getObject({
                 Bucket: templateBucket, 
                 Key: templateName
             });
-        }
-        if (config.verbose) {
-            console.log('Template Name: ' + templateName);
+            if (config.verbose) {
+                console.log('Template Name: ' + templateName);
+            }
         }
         
         var cal = null;
@@ -2353,7 +2416,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                 content:cal.toString(),
                 filename:eventName+'.ics'
             };
-            cal?cal.toString():null
+            attachments.push(attachment);
         }
         
         if (reservationAsset) {
@@ -2378,7 +2441,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             reservationDate: reservationDate,
             reservationStartTime: reservationStartTime,
             location: location,
-            attachment: attachment,
+            attachments: attachments,
             subject: subject,
             confirmationNotificationTitle: confirmationNotificationTitle,
             confirmationNotificationDescription: confirmationNotificationDescription
@@ -2396,14 +2459,18 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             details.reservationAsset = reservationAsset;
         }
         
+        if (extraInfo) {
+            details.additionalInfo = extraInfo;
+        }
+        
         if (template) {
             var templateBody = template.Body.toString();
             details.content = mark.up(templateBody, details);
         }
         
-        if (config.verbose) {
+        /*if (config.verbose) {
             console.log(details);
-        }
+        }*/
         
         return details;
         

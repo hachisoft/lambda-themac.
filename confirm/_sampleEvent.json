@@ -1,15 +1,1 @@
-﻿{
-  "stage": "dev",
-  "verb": "Validate",
-  "reservation": {
-    "reservationUser": "-KA5xj3_uDWIzaiy6iln",
-    "reservingUser": "-KA5xj3_uDWIzaiy6iln",
-    "location": "-KA5xmesBXCwd_ycYsGj",
-    "interest": "-KA5xlFGBpAlb2qHRFKy",
-    "dateReserved": 1458746397234
-  },
-  "session": {
-    "date": 1458918900000,
-    "endDate": 1458923400000
-  }
-}
+﻿{ "stage": "dev", "registrations": [ "-KDj8X0FkEDq9lC6x9nt" ], "verb": "Register", "provisioned": "-KA5xj3Zh_kSu9gVZG86" }
