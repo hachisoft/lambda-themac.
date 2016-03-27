@@ -2338,7 +2338,8 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                             date: formatTime(session.date,'MMM Do'),
                             startTime: formatTime(session.date,'h:mm a'),
                             endTime: formatTime(session.date + (session.duration * 60000),'h:mm a'),
-                            instructor: session.instructor
+                            instructor: session.instructor,
+                            location: sessionLocationName
                         });
                     }
                 }

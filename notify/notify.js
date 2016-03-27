@@ -424,7 +424,7 @@ function processUserNotification(db, user_id, fromAddress, params, template) {
         var user = yield _user.get();
         if (user) {
             var sentNotification = false; var sentEmail = null;
-            var details = yield buildNotification(db, user, user_id, params.subject, template, title, description, sentBy, image);
+            var details = yield buildNotification(db, user, user_id, params, template, title, description, sentBy, image);
             if (user.sendNotificationConfirmation) {
                 //update just this attribute
                 var _user = db.child('users/' + user_id + '/numNewNotifications');
@@ -467,12 +467,26 @@ function processUserNotification(db, user_id, fromAddress, params, template) {
                     'notifiedMember': user.memberNumber,
                     'type': params.type,
                     'timestamp': moment().valueOf(),
+                    'title': title || '',
+                    'description' : description || ''
                 };
                 if (params.admin) {
                     auditEntry.admin = params.admin;
                 }
                 if (params.adminName) {
                     auditEntry.adminName = params.adminName;
+                }
+                if (params.eventName) {
+                    auditEntry.eventName = params.eventName;
+                }
+                if (params.eventNumber) {
+                    auditEntry.eventNumber = params.eventNumber;
+                }
+                if (params.eventDate) {
+                    auditEntry.eventDate = params.eventDate;
+                }
+                if (params.sessions) {
+                    auditEntry.sessions = params.sessions;
                 }
                 yield _auditNotifications.push(auditEntry);
             }
@@ -486,8 +500,44 @@ function processEventNotification(db, event_id, fromAddress, params, template) {
         var _evt = db.child("events/" + event_id);
         var evt = yield _evt.get();
         if (evt) {
-            params.subject = evt.name + ' notification';
+            if (evt.sessions) {
+                params.sessions = [];
+                for (var propertyName in evt.sessions) {
+                    var _c = db.child('sessions/' + propertyName);
+                    var session = yield _c.get();
+                    if (session) {
+                        var sessionLocationName = '';
+                        if (session.location) {
+                            var _sl = db.child('locations/' + session.location);
+                            var sl = yield _sl.get();
+                            if (sl) {
+                                sessionLocationName = sl.name || '';
+                            }
+                        }
+                        params.sessions.push({
+                            date: formatTime(session.date, 'MMM Do'),
+                            startTime: formatTime(session.date, 'h:mm a'),
+                            endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
+                            instructor: session.instructor,
+                            location: sessionLocationName
+                        });
+                    }
+                }
+            }  
+            
+            if (evt.title && evt.number) {
+                params.subject = evt.title + ' (' + evt.number + ')';
+                params.eventName = evt.title;
+                params.eventNumber = evt.number;
 
+            }
+            else {
+                params.subject = 'Event notification';
+            }
+            
+            if (evt.startDate) {
+                params.eventDate = formatTime(evt.startDate, 'MMM Do');
+            }
             var registrationPromises = [];
             Object.keys(evt.registrations).forEach(function (key) {
                 var _registration = db.child('registrations/' + key);
@@ -553,7 +603,7 @@ function processInterestNotification(db, interest_id, fromAddress, params, templ
     }).catch(onerror);
 };
 
-function buildNotification(db, user, user_id, subject, template, title, description, sentBy, image) {
+function buildNotification(db, user, user_id, params, template, title, description, sentBy, image) {
     var details = {
         memberName: user.fullName,
         user_id: user_id,
@@ -562,8 +612,24 @@ function buildNotification(db, user, user_id, subject, template, title, descript
         description: description,
         sentBy: sentBy,
         image: image,
-        subject: subject
+        subject: params.subject
     };
+    
+    if (params.eventName) {
+        details.eventName = params.eventName;
+    }
+    
+    if (params.eventNumber) {
+        details.eventNumber = params.eventNumber;
+    }
+    
+    if (params.eventDate) {
+        details.eventDate = params.eventDate;
+    }
+    
+    if (params.sessions) {
+        details.sessions = params.sessions;
+    }
     
     return fillTemplate(template, details);
 }
