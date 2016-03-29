@@ -78,7 +78,7 @@ exports.handler = function (params, context) {
             if (config.verbose) {
                 console.log('Auth succeeded');
             }
-
+            params.nodups = {};
             if (params.reservation) {
                 co(function*() {
                     if (params.provisioned) {
@@ -1219,7 +1219,15 @@ function processRegistration(errors, params, verb, db, context, registration_id,
             
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
-            if (validateRegistration(errors, params, db, registeredUser, registeringUser, registration, event)) {
+            
+            var _provisionedUser = null;
+            var provisionedUser = null;
+            if (params.provisioned) {
+                _provisionedUser = db.child('users/' + params.provisioned);
+                provisionedUser = yield _provisionedUser.get();
+            }
+
+            if (validateRegistration(errors, params, db, registeredUser, registeringUser, provisionedUser, registration, event)) {
                 registration.status = "Reserved";
                 registration.dateRegistered = moment().valueOf();
                 if (!event.noRegistrationRequired) {
@@ -1234,7 +1242,7 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                             }
                         });
                     }
-                    else {
+                    else if (!isAdmin(provisionedUser)) {
                         registration.status = "Pending";
                         registration.isOnWaitlist = true;
                         verb = "Waitlist"; //change the verb so the correct template is sent out
@@ -1607,7 +1615,7 @@ function isAdmin(user)
     return false;
 }
 
-function validateRegistration(errors, params, db, user, registeringUser, registration, event) {
+function validateRegistration(errors, params, db, user, registeringUser, provisionedUser, registration, event) {
     if (!event)
         return false;
     if (!registration)
@@ -1636,7 +1644,7 @@ function validateRegistration(errors, params, db, user, registeringUser, registr
         return false;
     }
     
-    if (isAdmin(registeringUser)) { //no rule checks
+    if (isAdmin(provisionedUser)) { //no rule checks
         return true;
     }
     
@@ -2025,7 +2033,10 @@ function sendConfirmation(errors, params, db, user, user_id, details, fromAddres
             }
             
             if (user.sendEmailConfirmation) {
-                yield sendEmail(fromAddress, details.email, details.subject, details.content,null,details.attachments);
+                if (params.nodups[details.email] === undefined) {
+                    params.nodups[details.email] = 1;
+                    yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachments);
+                }
             }
         }
     }).catch(function (err) {
@@ -2104,6 +2115,8 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         var confirmationNotificationTitle = "";
         var confirmationNotificationDescription = "";
         var extraInfo = null;
+        var messageBody = null;
+        var includePolicy = false;
         
         var templateName = "confirmation.html";
         subject = "MAC Registration Confirmation";
@@ -2164,6 +2177,14 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                 if (confirmation.confirmationExtraInfo) {
                     extraInfo = confirmation.confirmationExtraInfo;
                 }
+
+                if (confirmation.confirmationMessageBody) {
+                    messageBody = confirmation.confirmationMessageBody;
+                }
+
+                if (confirmation.confirmationIncludePolicy) {
+                    includePolicy = true;
+                }
             }
             else if (verb === 'Reserve') {
                 if (confirmation.confirmationTemplate) {
@@ -2185,6 +2206,14 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                 }
                 if (confirmation.confirmationSubject) {
                     subject = confirmation.confirmationSubject;
+                }
+
+                if (confirmation.confirmationMessageBody) {
+                    messageBody = confirmation.confirmationMessageBody;
+                }
+                
+                if (confirmation.confirmationIncludePolicy) {
+                    includePolicy = true;
                 }
             }
             else if (verb === 'Cancel') {
@@ -2462,6 +2491,14 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         
         if (extraInfo) {
             details.additionalInfo = extraInfo;
+        }
+        
+        if (messageBody) {
+            details.messageBody = messageBody;
+        }
+        
+        if (includePolicy) {
+            details.includePolicy = includePolicy;
         }
         
         if (template) {
