@@ -766,7 +766,7 @@ function processRegistrationCancellation(errors, params, verb, cancellingUser_id
                             var details = yield buildConfirmation(errors, params, verb, db, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                             //send each person on the confirmation their conf
                             if (details) {
-                                yield sendConfirmation(errors, params, db, cancellingUser, cancellingUser_id, details, fromAddress);
+                                yield sendConfirmation(errors, params, verb, db, cancellingUser, cancellingUser_id, details, fromAddress);
                             }
                         }
                     }
@@ -1213,7 +1213,7 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                     details = yield buildConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
                     //send each person on the confirmation their conf
                     if (details) {
-                        yield sendConfirmation(errors, params, db, provisionedUser, params.provisioned, details, fromAddress);
+                        yield sendConfirmation(errors, params, verb, db, provisionedUser, params.provisioned, details, fromAddress);
                     }
                 }
             }
@@ -1944,12 +1944,14 @@ function sendEmail(fromAddress, to, subject, content,message,attachments) {
     });
 }
 
-function sendConfirmation(errors, params, db, user, user_id, details, fromAddress) {
+function sendConfirmation(errors, params, verb, db, user, user_id, details, fromAddress) {
     return co(function*() {
         if (user && details && fromAddress) {
             if (config.verbose) { console.log("sendConfirmation from " + fromAddress + " to " + user.email); }
-            
+            var sentNotification = false;
+            var sentEmail = null;
             if (user.sendNotificationConfirmation) {
+                sentNotification = true;
                 //update just this attribute
                 var _numNewNotifications = db.child('users/' + user_id + '/numNewNotifications');
                 yield _numNewNotifications.transaction(function (numNewNotifications) {
@@ -1967,8 +1969,8 @@ function sendConfirmation(errors, params, db, user, user_id, details, fromAddres
                 var notification = {
                     type: 'Confirmation',
                     timestamp: moment().valueOf(),
-                    title: details.confirmationNotificationTitle,
-                    description: details.confirmationNotificationDescription,
+                    title: details.confirmationNotificationTitle || '',
+                    description: details.confirmationNotificationDescription || '',
                     user: user_id
                 };
                 
@@ -1982,9 +1984,48 @@ function sendConfirmation(errors, params, db, user, user_id, details, fromAddres
             
             if (user.sendEmailConfirmation) {
                 if (params.nodups[details.email] === undefined) {
+                    sentEmail = details.email;
                     params.nodups[details.email] = 1;
                     yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachments);
                 }
+            }
+            if (sentEmail || sentNotification) {
+                var _auditNotifications = db.child('auditNotifications');
+                var auditEntry = {
+                    'sentEmail': sentEmail,
+                    'sentNotification': sentNotification,
+                    'notifiedName': user.firstName + " " + user.lastName,
+                    'notifiedMember': user.memberNumber,
+                    'type': "Confirm"+verb,
+                    'timestamp': moment().valueOf(),
+                    'title': details.confirmationNotificationTitle || '',
+                    'description' : details.confirmationNotificationDescription || ''
+                };
+                if (params.admin) {
+                    auditEntry.admin = params.admin;
+                }
+                if (params.adminName) {
+                    auditEntry.adminName = params.adminName;
+                }
+                if (details.eventName) {
+                    auditEntry.eventName = details.eventName;
+                }
+                if (details.eventNumber) {
+                    auditEntry.eventNumber = details.eventNumber;
+                }
+                if (details.eventDate) {
+                    auditEntry.eventDate = details.eventDate;
+                }
+                if (details.location) {
+                    auditEntry.location = details.location;
+                }
+                if (details.interests) {
+                    auditEntry.interests = details.interests;
+                }
+                if (details.sessions) {
+                    auditEntry.sessions = details.sessions;
+                }
+                yield _auditNotifications.push(auditEntry);
             }
         }
     }).catch(function (err) {
@@ -2058,14 +2099,14 @@ function processConfirmation(errors, params, verb, db, makingUser, makingUser_id
             var details = yield buildConfirmation(errors, params, verb, db, makingUser, makingUser_id, event, event_id, registration, reservation, reservation_id, confirmation, location, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
             //send each person on the confirmation their conf
             if (details) {
-                yield sendConfirmation(errors, params, db, makingUser, makingUser_id, details, fromAddress);
+                yield sendConfirmation(errors, params, verb, db, makingUser, makingUser_id, details, fromAddress);
             }
         }
 
         var userDetails = yield buildConfirmation(errors, params, verb, db, user, user_id, event, event_id, registration, reservation, reservation_id, confirmation, location, totalCost, adultCount, juniorCount, primaryUser, templateBucket, fromAddress);
         //send each person on the confirmation their conf
         if (userDetails) {
-            yield sendConfirmation(errors, params, db, user, user_id, userDetails, fromAddress);
+            yield sendConfirmation(errors, params, verb, db, user, user_id, userDetails, fromAddress);
         }
         
     }).catch(function (err) {
@@ -2256,6 +2297,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         var linkTo = null;
         var identifier = null;
         var sessions = [];
+        var interests = [];
         if (verb === 'Register') {
             if (event_id) {
                 linkTo = "event";
@@ -2300,6 +2342,11 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
 
             eventDate = formatTime(event.startDate, 'MMM Do');
             eventDescription = event.description;
+            if (event.interests) {
+                for (var propertyName in event.interests) {
+                    interests.push(propertyName);
+                }
+            }
             if (event.sessions) {
                 for (var propertyName in event.sessions) {
                     var _c = db.child('sessions/' + propertyName);
@@ -2333,13 +2380,19 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                                 });
                             }
                         }
-                        sessions.push({
-                            date: formatTime(session.date,'MMM Do'),
-                            startTime: formatTime(session.date,'h:mm a'),
-                            endTime: formatTime(session.date + (session.duration * 60000),'h:mm a'),
-                            instructor: session.instructor,
-                            location: sessionLocationName
-                        });
+                        var sessionDetail = {
+                            date: formatTime(session.date, 'MMM Do'),
+                            startTime: formatTime(session.date, 'h:mm a'),
+                            endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
+                            
+                        };
+                        if (session.instructor) {
+                            sessionDetail.instructor = session.instructor;
+                        }
+                        if (sessionLocationName) {
+                            sessionDetail.location = sessionLocationName;
+                        }
+                        sessions.push(sessionDetail);
                     }
                 }
             }
@@ -2367,10 +2420,11 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         }
             
         if (reservation) {
-            
             eventName = location + " Reservation";
             confirmationNotificationTitle = eventName;
-
+            if (reservation.interest) {
+                interests.push(reservation.interest);
+            }
             if (reservation.asset) {
                 var _a = db.child('reservationAssets/' + reservation.asset);
                 var asset = yield _a.get();
@@ -2433,6 +2487,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             eventDate: eventDate,
             eventDescription: eventDescription,
             sessions: sessions,
+            interests: interests,
             adultCount: adultCount,
             juniorCount: juniorCount,
             totalCost: totalCost,
