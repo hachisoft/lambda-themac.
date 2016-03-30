@@ -17,7 +17,7 @@ function onerror(err) {
 exports.handler = function (params, context) {
     var stage = params.stage || 'dev';
     var result = '';
-    if (event) {
+    if (params) {
         // Read options from the event.
         console.log("Reading options from event:\n", util.inspect(params, { depth: 5 }));
         
@@ -78,9 +78,9 @@ exports.handler = function (params, context) {
     }
 };
 
-function deleteRegistrationReservations(errors, params, db)
+function deleteRegistrationReservation(errors, params, db)
 {
-    co(function*() {
+    return co(function*() {
         var registrationPromises = [];
         var reservationPromises = [];
         var _registrations = [];

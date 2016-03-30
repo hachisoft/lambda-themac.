@@ -106,6 +106,7 @@ exports.handler = function (params, context) {
                 console.log('Auth succeeded');
                 console.log({'templateBucket':templateBucket,'templateName':templateName});
             }
+            params.interests = [];
             co(function*() {
                 if (params.provisioned) {
                     var _sendingUser = db.child("users/" + params.provisioned);
@@ -133,7 +134,8 @@ exports.handler = function (params, context) {
                     var template = yield getS3Object(templateBucket, templateName);
                     if (template) {
                         var templateBody = template.Body.toString();
-                        yield processUserNotification(db, params.id, result, fromAddress, params, templateBody);
+                        params.subject = params.title;
+                        yield processUserNotification(db, params.id, fromAddress, params, templateBody);
                     }
                 }
                 else if (params.type === 'closure') {
@@ -280,37 +282,7 @@ function processEventCreateNotification(db, event_id, fromAddress, templateBody)
 
                             details = fillTemplate(templateBody, details);
 
-                            if (user.sendNotificationConfirmation) {
-                                //update just this attribute
-                                var _user = db.child('users/' + key + '/numNewNotifications');
-                                if (user.numNewNotifications) {
-                                    user.numNewNotifications++;
-                                }
-                                else {
-                                    user.numNewNotifications = 1;
-                                }
-                                yield _user.set(user.numNewNotifications);
-                                var fbKey = db.generateUniqueKey();
-                                var _notification = db.child('notifications/' + fbKey);
-                                
-                                var notification = {
-                                    type: 'Reminder',
-                                    timestamp: moment().valueOf(),
-                                    title: title || '',
-                                    description: description || '',
-                                    user: key,
-                                };
-                                
-                                if (image) {
-                                    notification.imageId = image;
-                                }
-                                
-                                yield _notification.set(notification);
-                            }
-                            
-                            if (user.sendEmailConfirmation) {
-                                yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
-                            }
+                            yield sendNotification(db, user, user_id, params, template, title, description, sentBy, image, details, fromAddress);
                         }
                     }
                 }
@@ -423,83 +395,105 @@ function processUserNotification(db, user_id, fromAddress, params, template) {
         var _user = db.child("users/" + user_id);
         var user = yield _user.get();
         if (user) {
-            var sentNotification = false; var sentEmail = null;
             var details = yield buildNotification(db, user, user_id, params, template, title, description, sentBy, image);
-            if (user.sendNotificationConfirmation) {
-                //update just this attribute
-                var _user = db.child('users/' + user_id + '/numNewNotifications');
-                if (user.numNewNotifications) {
-                    user.numNewNotifications++;
-                }
-                else {
-                    user.numNewNotifications = 1;
-                }
-                yield _user.set(user.numNewNotifications);
-                var key = db.generateUniqueKey();
-                var _notification = db.child('notifications/' + key);
-                
-                var notification = {
-                    type: 'Reminder',
-                    timestamp: moment().valueOf(),
-                    title: title || '',
-                    description: description || '',
-                    user: user_id,
-                };
-                
-                if (image) {
-                    notification.imageId = image;
-                }
-
-                yield _notification.set(notification);
-                sentNotification = true;
-            }
-            
-            if (user.sendEmailConfirmation) {
-                yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
-                sentEmail = details.email;
-            }
-            if (sentEmail || sentNotification) {
-                var _auditNotifications = db.child('auditNotifications');
-                var auditEntry = {
-                    'sentEmail': sentEmail,
-                    'sentNotification': sentNotification,
-                    'notifiedName': user.firstName+" "+user.lastName,
-                    'notifiedMember': user.memberNumber,
-                    'type': params.type,
-                    'timestamp': moment().valueOf(),
-                    'title': title || '',
-                    'description' : description || ''
-                };
-                if (params.admin) {
-                    auditEntry.admin = params.admin;
-                }
-                if (params.adminName) {
-                    auditEntry.adminName = params.adminName;
-                }
-                if (params.eventName) {
-                    auditEntry.eventName = params.eventName;
-                }
-                if (params.eventNumber) {
-                    auditEntry.eventNumber = params.eventNumber;
-                }
-                if (params.eventDate) {
-                    auditEntry.eventDate = params.eventDate;
-                }
-                if (params.sessions) {
-                    auditEntry.sessions = params.sessions;
-                }
-                yield _auditNotifications.push(auditEntry);
-            }
+            yield sendNotification(db, user, user_id, params, template, title, description, sentBy, image, details, fromAddress);
         }
     }).catch(onerror);
 };
 
+function sendNotification(db, user, user_id, params, template, title, description, sentBy, image, details, fromAddress)
+{
+    return co(function*() {
+        var sentNotification = false; var sentEmail = null;
+        if (user.sendNotificationConfirmation) {
+            //update just this attribute
+            var _numNewNotifications = db.child('users/' + user_id + '/numNewNotifications');
+            yield _numNewNotifications.transaction(function (numNewNotifications) {
+                if (numNewNotifications === null) {
+                    return 1;
+                }
+                else {
+                    return numNewNotifications + 1;
+                }
+            });
+        
+            var key = db.generateUniqueKey();
+            var _notification = db.child('notifications/' + key);
+        
+            var notification = {
+                type: 'Reminder',
+                timestamp: moment().valueOf(),
+                title: title || '',
+                description: description || '',
+                user: user_id,
+            };
+        
+            if (image) {
+                notification.imageId = image;
+            }
+        
+            yield _notification.set(notification);
+            sentNotification = true;
+        }
+    
+        if (user.sendEmailConfirmation) {
+            yield sendEmail(fromAddress, details.email, details.subject, details.content, null, details.attachment);
+            sentEmail = details.email;
+        }
+        if (sentEmail || sentNotification) {
+            var _auditNotifications = db.child('auditNotifications');
+            var auditEntry = {
+                'sentEmail': sentEmail,
+                'sentNotification': sentNotification,
+                'notifiedName': user.firstName + " " + user.lastName,
+                'notifiedMember': user.memberNumber,
+                'type': params.type,
+                'timestamp': moment().valueOf(),
+                'title': title || '',
+                'description' : description || ''
+            };
+            if (params.admin) {
+                auditEntry.admin = params.admin;
+            }
+            if (params.adminName) {
+                auditEntry.adminName = params.adminName;
+            }
+            if (params.eventName) {
+                auditEntry.eventName = params.eventName;
+            }
+            if (params.eventNumber) {
+                auditEntry.eventNumber = params.eventNumber;
+            }
+            if (params.eventDate) {
+                auditEntry.eventDate = params.eventDate;
+            }
+            if (params.sessions) {
+                auditEntry.sessions = params.sessions;
+            }
+            if (params.interests) {
+                auditEntry.interests = params.interests;
+            }
+            if (params.locations) {
+                auditEntry.locations = params.locations;
+            }
+            yield _auditNotifications.push(auditEntry);
+        }
+    }).catch(function (err) {
+        console.log(err);
+    });
+}
+
 function processEventNotification(db, event_id, fromAddress, params, template) {
     return co(function*() {
-        
+        var locations = [];
         var _evt = db.child("events/" + event_id);
         var evt = yield _evt.get();
         if (evt) {
+            if (evt.interests) {
+                for (var propertyName in evt.interests) {
+                    params.interests.push(propertyName);
+                }
+            }
             if (evt.sessions) {
                 params.sessions = [];
                 for (var propertyName in evt.sessions) {
@@ -508,19 +502,26 @@ function processEventNotification(db, event_id, fromAddress, params, template) {
                     if (session) {
                         var sessionLocationName = '';
                         if (session.location) {
+                            locations.push(session.location);
                             var _sl = db.child('locations/' + session.location);
                             var sl = yield _sl.get();
                             if (sl) {
                                 sessionLocationName = sl.name || '';
                             }
                         }
-                        params.sessions.push({
+                        var sessionDetails = {
                             date: formatTime(session.date, 'MMM Do'),
                             startTime: formatTime(session.date, 'h:mm a'),
-                            endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
-                            instructor: session.instructor,
-                            location: sessionLocationName
-                        });
+                            endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a')
+                        };
+                        
+                        if (session.instructor) {
+                            sessionDetails.instructor = session.instructor;
+                        }
+                        if (sessionLocationName) {
+                            sessionDetails.location = sessionLocationName;
+                        }
+                        params.sessions.push(sessionDetails);
                     }
                 }
             }  
@@ -533,6 +534,10 @@ function processEventNotification(db, event_id, fromAddress, params, template) {
             }
             else {
                 params.subject = 'Event notification';
+            }
+            
+            if (locations.length) {
+                params.locations = locations;
             }
             
             if (evt.startDate) {
@@ -560,6 +565,7 @@ function processInterestNotification(db, interest_id, fromAddress, params, templ
         var sent = {};
         var interest = yield db.child("interests/" + interest_id).get();
         if (interest) {
+            params.interest.push(interest_id);
             params.subject = interest.name + ' notification';
             if (interest.children)
             {

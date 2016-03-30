@@ -341,9 +341,6 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
                             name: event.title,
                             title: event.title,
                             date: session.date,
-                            cancelBy: event.cancelBy,
-                            registrationOpen: event.registrationOpen,
-                            registrationClose: event.registrationClose,
                             duration: session.duration,
                             identifier: event.number,
                             location: session.location,
@@ -355,6 +352,17 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
                             interestName: interestName,
                             objectID: sessionIds[s]
                         };
+                        
+                        if (event.cancelBy) {
+                            eventSession.cancelBy = event.cancelBy;
+                        }
+                        
+                        if (event.registrationOpen) {
+                            eventSession.registrationOpen = event.registrationOpen;
+                        }
+                        if (event.registrationClose) {
+                            eventSession.registrationClose = event.registrationClose;
+                        }
                         
                         yield eventSessionIndex.saveObject(eventSession);
                     }

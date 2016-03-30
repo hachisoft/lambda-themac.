@@ -2016,8 +2016,8 @@ function sendConfirmation(errors, params, verb, db, user, user_id, details, from
                 if (details.eventDate) {
                     auditEntry.eventDate = details.eventDate;
                 }
-                if (details.location) {
-                    auditEntry.location = details.location;
+                if (details.locations) {
+                    auditEntry.locations = details.locations;
                 }
                 if (details.interests) {
                     auditEntry.interests = details.interests;
@@ -2298,6 +2298,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         var identifier = null;
         var sessions = [];
         var interests = [];
+        var locations = [];
         if (verb === 'Register') {
             if (event_id) {
                 linkTo = "event";
@@ -2354,6 +2355,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                     if (session) {
                         var sessionLocationName = '';
                         if (session.location) {
+                            locations.push(session.location)
                             var _sl = db.child('locations/' + session.location);
                             var sl = yield _sl.get();
                             if (sl) {
@@ -2384,14 +2386,16 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                             date: formatTime(session.date, 'MMM Do'),
                             startTime: formatTime(session.date, 'h:mm a'),
                             endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
-                            
                         };
+                        
                         if (session.instructor) {
                             sessionDetail.instructor = session.instructor;
                         }
+                        
                         if (sessionLocationName) {
-                            sessionDetail.location = sessionLocationName;
+                            sessionDetail.location = sessionLocationName
                         }
+                        
                         sessions.push(sessionDetail);
                     }
                 }
@@ -2496,6 +2500,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             reservationDate: reservationDate,
             reservationStartTime: reservationStartTime,
             location: location,
+            locations: locations,
             attachments: attachments,
             subject: subject,
             confirmationNotificationTitle: confirmationNotificationTitle,

@@ -1,17 +1,3 @@
 ﻿{
-  "stage": "dev",
-  "type": "notifyPromotion",
-  "interests": [ "-KA5xlFFDObT4puADnCh" ],
-  "draft": "tedwards@hachisoft.com",
-  "subject": "test subject",
-  "contactInfo": "Contact Tyler",
-  "includeParkingProjection":  true,
-  "eventDetails": [
-    {
-      "id": "-KA5xuQ5OdCRHvRXLx0l",
-      "title": "Test Title",
-      "description": "Test Description"
-    }
-  ],
-  "additionalInfo":  "Some long winded explanation"
+  "stage": "dev", "provisioned": "-KE2tRE2BMF4ZKK-MXRR", "id": "-KE2tET5GsuJZUNh9ah4", "type": "user", "title": "waa", "description":"waa"
 }

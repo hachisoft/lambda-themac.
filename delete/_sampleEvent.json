@@ -1,8 +1,9 @@
 ﻿{
-    "registrations": [
-    ],
-    "reservations": [
-"-KBTZCks39t2GYN62TFY",
- "-KBTZM9z8yPBb9f1789o"
-    ]
+  "stage": "v0",
+  "type": "reservation",
+  "registrations": [
+  ],
+  "reservations": [
+    "-KBPKUuzGR8gqIqQwUzB"
+  ]
 }
