@@ -151,7 +151,7 @@ exports.handler = function (params, context) {
                     var template = yield getS3Object(templateBucket, templateName);
                     if (template) {
                         var templateBody = template.Body.toString();
-                        yield processEventCreateNotification(db, params.id, fromAddress, templateBody);
+                        yield processEventCreateNotification(db, params, fromAddress, templateBody);
                     }
                 }
                 else if (params.type === 'childcare') {
@@ -239,13 +239,13 @@ function processFeedbackNotification(db, fromAddress, title, description, sentBy
     }).catch(onerror);
 };
 
-function processEventCreateNotification(db, event_id, fromAddress, templateBody) {
+function processEventCreateNotification(db, params, fromAddress, template) {
     return co(function*() {
         if (config.verbose) {
             console.log('processEventCreateNotification');
         }
         
-        var _evt = db.child("events/" + event_id);
+        var _evt = db.child("events/" + params.id);
         var evt = yield _evt.get();
         if (evt) {
             var eventCreator = '';
@@ -280,9 +280,9 @@ function processEventCreateNotification(db, event_id, fromAddress, templateBody)
                                 subject: title
                             };
 
-                            details = fillTemplate(templateBody, details);
+                            details = fillTemplate(template, details);
 
-                            yield sendNotification(db, user, user_id, params, template, title, description, sentBy, image, details, fromAddress);
+                            yield sendNotification(db, user, key, params, template, title, description, sentBy, image, details, fromAddress);
                         }
                     }
                 }
@@ -470,7 +470,10 @@ function sendNotification(db, user, user_id, params, template, title, descriptio
             if (params.sessions) {
                 auditEntry.sessions = params.sessions;
             }
-            if (params.interests) {
+            if (params.interestIds) {
+                auditEntry.interests = params.interestIds;
+            }
+            else if (params.interests) {
                 auditEntry.interests = params.interests;
             }
             if (params.locations) {

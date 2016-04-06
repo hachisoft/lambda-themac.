@@ -163,6 +163,8 @@ function processPost(db, params, algoliaApp, algoliaAdminKey) {
                 post.objectName = "post";
                 post.objectID = params.id;
                 post.status = "Approved";
+                post.postSort = post.timestamp;
+                post.registrationClose = post.endDate;
                 yield cardsIndex.saveObject(post);
             }
         }
@@ -370,6 +372,12 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
                 event.dates = dates;
                 event.objectName = "event";
                 event.objectID = params.id;
+                if (event.startDate) {
+                    event.eventSort = event.startDate;
+                }
+                if (!event.registrationClose) {
+                    event.registrationClose = event.endDate;
+                }
                 yield cardsIndex.saveObject(event);
             }
         }

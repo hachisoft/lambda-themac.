@@ -141,12 +141,16 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
         var admin = null;
         var adminName = null;
         var type = null;
+        var draft = false;
         if (notifyRequest) {
-            interests = notifyRequest.interestIds;
+            interests = notifyRequest.interestIds || notifyRequest.interests;
             eventDetails = notifyRequest.eventDetails;
             admin = notifyRequest.admin;
             adminName = notifyRequest.adminName;
             type = notifyRequest.type;
+            if (notifyRequest.draft) {
+                draft = notifyRequest.draft;
+            }
         }
         
         var _users = db.child("users");
@@ -174,7 +178,7 @@ function processNotifyPromotion(db, verb, stage, bulkARN, fromAddress, linkRoot,
                 }
             }
             
-            if (fillEmails(nodups, emails)) {
+            if (fillEmails(nodups, emails)||draft) {
                 
                 var message = {};
                 
