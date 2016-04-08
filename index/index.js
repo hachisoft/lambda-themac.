@@ -378,6 +378,13 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
                 if (!event.registrationClose) {
                     event.registrationClose = event.endDate;
                 }
+                if (event.defaultLocation) {
+                    var _location = db.child('locations/' + session.location);
+                    var location = yield _location.get();
+                    if (location) {
+                        event.defaultLocationName = location.name;
+                    }
+                }
                 yield cardsIndex.saveObject(event);
             }
         }
