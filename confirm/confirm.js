@@ -182,7 +182,7 @@ exports.handler = function (params, context) {
                         var registration_id = _registrations[k];
                         var _registration = db.child('registrations/' + registration_id);
                         if (registration) {
-                            if (params.verb === "Register") {
+                            if (params.verb === "Register" || params.verb === "RegisterForce") {
                                 if (registration.status === "Pending") {
                                     noneMatched = false;
                                     yield processRegistration(errors, params, params.verb, db, context, registration_id, _registration, registration, totalCost, adultCount, juniorCount, fromAddress, templateBucket);
@@ -1195,7 +1195,11 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                             }
                         });
                     }
-                    else if (!isAdmin(provisionedUser)) {
+                    else if (!(isAdmin(provisionedUser) && verb === "RegisterForce")) {
+                        console.log({
+                            isAdmin: isAdmin(provisionedUser),
+                            verb: verb
+                        });
                         registration.status = "Pending";
                         registration.isOnWaitlist = true;
                         verb = "Waitlist"; //change the verb so the correct template is sent out
@@ -1879,13 +1883,16 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
                 }
             }
         }
-        else if (verb === 'Register' || verb === 'Waitlist' || verb === 'Error-Cancel' || verb === 'Error-Register') {
-            
+        else if (verb === 'Register' || verb === 'RegisterForce' || verb === 'Waitlist' || verb === 'Error-Cancel' || verb === 'Error-Register') {
+
             if (registeredUser && registeredUser.memberNumber) {
                 auditEntry.registeredMember = registeredUser.memberNumber;
             }
             if (registration.isGuest) {
                 auditEntry.isGuest = registration.isGuest;
+            }
+            if (registration.isOnWaitlist) {
+                auditEntry.isOnWaitlist = registration.isOnWaitlist;
             }
             if (registeringUser && registeringUser.memberNumber) {
                 auditEntry.registeringMember = registeringUser.memberNumber;
@@ -1905,7 +1912,6 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
             if (interestName) {
                 auditEntry.interest = interestName;
             }
-
             promises.push(_registration.set(registration));
         }
         promises.push(_auditRegistrations.push(auditEntry));
@@ -2163,7 +2169,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         }
 
         if (confirmation) {
-            if (verb === 'Register') {
+            if (verb === 'Register' || verb === 'RegisterForce') {
                 if (confirmation.confirmationTemplate) {
                     template = yield download(confirmation.confirmationTemplate);
                 }
@@ -2275,7 +2281,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         }
         
         var cal = null;
-        if (verb === 'Register' || verb === 'Reserve') {
+        if (verb === 'Register' || verb === 'RegisterForce' || verb === 'Reserve') {
             cal = ical();
             cal.prodId({
                 company: 'MAC',
@@ -2299,7 +2305,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         var sessions = [];
         var interests = [];
         var locations = [];
-        if (verb === 'Register') {
+        if (verb === 'Register' || verb === 'RegisterForce') {
             if (event_id) {
                 linkTo = "event";
                 identifier = event_id;

@@ -345,6 +345,7 @@ function processEvent(db, params, algoliaApp, algoliaAdminKey) {
                             date: session.date,
                             duration: session.duration,
                             identifier: event.number,
+                            noRegistrationRequired: event.noRegistrationRequired,
                             location: session.location,
                             locationName: locationName,
                             status: event.status,
