@@ -1209,15 +1209,17 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                     }
                 }
                 yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
-                if (event.sendMemberNotifications) {
-                    yield processConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, templateBucket, fromAddress);
-                }
-                        
-                if (isAdmin(provisionedUser) && event.sendStaffNotifications){
-                    details = yield buildConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
-                    //send each person on the confirmation their conf
-                    if (details) {
-                        yield sendConfirmation(errors, params, verb, db, provisionedUser, params.provisioned, details, fromAddress);
+                if (!event.noRegistrationRequired) { //no registration required means no confirmation required
+                    if (event.sendMemberNotifications) {
+                        yield processConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, templateBucket, fromAddress);
+                    }
+                    
+                    if (isAdmin(provisionedUser) && event.sendStaffNotifications && params.provisioned != registration.registeredUser) {
+                        details = yield buildConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, event, registration.event, registration, null, null, confirmation, null, totalCost, adultCount, juniorCount, true, templateBucket, fromAddress);
+                        //send each person on the confirmation their conf
+                        if (details) {
+                            yield sendConfirmation(errors, params, verb, db, provisionedUser, params.provisioned, details, fromAddress);
+                        }
                     }
                 }
             }
@@ -1572,7 +1574,7 @@ function validateRegistration(errors, params, db, user, registeringUser, provisi
         return false;
     
     if (event.status !== 'Approved' && event.status !== 'Billed' ) {
-        registration.validationError = 'Event '+event.number+' has a status of' + event.status;
+        registration.validationError = 'Event '+event.number+' has a status of ' + event.status;
         AddError(errors,registration.validationError);
         return false;
     }
