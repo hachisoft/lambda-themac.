@@ -2349,7 +2349,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                 cal.setName(eventName);
             }
 
-            eventDate = formatTime(event.startDate, 'MMM Do');
+            eventDate = formatTime(event.startDate, 'dddd, MMMM D');
             eventDescription = event.description;
             if (event.interests) {
                 for (var propertyName in event.interests) {
@@ -2391,7 +2391,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                             }
                         }
                         var sessionDetail = {
-                            date: formatTime(session.date, 'MMM Do'),
+                            date: formatTime(session.date, 'MMMM D'),
                             startTime: formatTime(session.date, 'h:mm a'),
                             endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
                         };
@@ -2470,7 +2470,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                         });
                     }
                 }
-                reservationDate = formatTime(session.date, 'dddd MMM. D');
+                reservationDate = formatTime(session.date, 'dddd, MMMM D');
                 confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Date:</strong> "+reservationDate);
                 reservationStartTime = formatTime(session.date, 'h:mm a');
                 confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Time:</strong> " +reservationStartTime);
