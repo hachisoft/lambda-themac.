@@ -138,6 +138,15 @@ exports.handler = function (params, context) {
                         yield processUserNotification(db, params.id, fromAddress, params, templateBody);
                     }
                 }
+                else if (params.type === 'invitation') {
+                    yield processInvitationNotification(db,params);
+                }
+                else if (params.type === 'friend') {
+                    yield processFriendNotification(db, params);
+                }
+                else if (params.type === 'closure') {
+                    yield processClosureNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
+                }
                 else if (params.type === 'closure') {
                     yield processClosureNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
@@ -190,6 +199,57 @@ function setObjectAttribute(object, value, name, caps)
         }
         object[name] = value;
     }
+}
+
+function processInvitationNotification(db, params)
+{
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processInvitationNotification');
+        }
+        if (params.recipient) {
+            var _recipient = db.child('memberProfilePublics/' + params.recipient);
+            var recipient = yield _recipient.get();
+            if (recipient) {
+                var _numNewNotifications = db.child('users/' + recipient.user + '/numNewNotifications');
+                yield _numNewNotifications.transaction(function (numNewNotifications) {
+                    if (numNewNotifications === null) {
+                        return 1;
+                    }
+                    else {
+                        return numNewNotifications + 1;
+                    }
+                });
+            }
+        }
+    }).catch(function (err) {
+        console.log(err);
+    });
+}
+function processFriendNotification(db, params)
+{
+    return co(function*() {
+        if (config.verbose) {
+            console.log('processFriendNotification');
+        }
+        if (params.friend) {
+            var _friend = db.child('memberProfilePublics/' + params.friend);
+            var friend = yield _friend.get();
+            if (friend) {
+                var _numNewNotifications = db.child('users/' + friend.user + '/numNewNotifications');
+                yield _numNewNotifications.transaction(function (numNewNotifications) {
+                    if (numNewNotifications === null) {
+                        return 1;
+                    }
+                    else {
+                        return numNewNotifications + 1;
+                    }
+                });
+            }
+        }
+    }).catch(function (err) {
+        console.log(err);
+    });
 }
 
 function processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName) {
