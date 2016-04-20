@@ -521,8 +521,8 @@ function processReservationCancel(errors, reservationParams, verb, db, context, 
         if (session && reservationUser) {
             if (validateReservationCancel(errors, params, session, reservation_id, location, interest, reservingUser, reservationUser, reservation)) {
                 reservation.status = "Cancelled";
+                yield updateReservation(errors, reservationParams, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
                 if (verb !== 'Dismiss') {
-                    yield updateReservation(errors, reservationParams, verb, db, _reservation, reservation, reservation_id, _session, session, _location, location, _reservationUser, reservationUser, _reservingUser, reservingUser, _interest, interest);
                     yield processConfirmation(errors, reservationParams, verb, db, reservingUser, reservation.reservingUser, reservationUser, reservation.reservationUser, null, null, null, reservation, reservation_id, null, location.name, templateBucket, fromAddress);
                 }
             }
