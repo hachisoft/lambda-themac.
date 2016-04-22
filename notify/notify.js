@@ -52,6 +52,10 @@ exports.handler = function (params, context) {
         var templateBucket = '';
         var notifyUsersARN = null;
         var linkRoot = null;
+        var childcareEmails = [];
+        var tauscherEmails = [];
+        var mcalpinEmails = [];
+        var feedbackEmails = [];
         if (stage === 'v0') {
             templateBucket = config.prodTemplateBucket;
             authToken = config.prodSecret;
@@ -59,6 +63,10 @@ exports.handler = function (params, context) {
             fromAddress = config.prodFromAddress;
             notifyUsersARN = config.prodNotifyUsersARN;
             linkRoot = config.prodLinkRoot;
+            childcareEmails = config.childcareEmails;
+            tauscherEmails = config.tauscherEmails;
+            mcalpinEmails = config.mcalpinEmails;
+            feedbackEmails = config.feedbackEmails;
         }
         else if (stage === 'v0_2') {
             templateBucket = config.prod2TemplateBucket;
@@ -67,6 +75,10 @@ exports.handler = function (params, context) {
             fromAddress = config.prodFromAddress;
             notifyUsersARN = config.prod2NotifyUsersARN;
             linkRoot = config.prod2LinkRoot;
+            childcareEmails = config.childcareEmails;
+            tauscherEmails = config.tauscherEmails;
+            mcalpinEmails = config.mcalpinEmails;
+            feedbackEmails = config.feedbackEmails;
         }
         else {
             templateBucket = config.devTemplateBucket;
@@ -75,6 +87,10 @@ exports.handler = function (params, context) {
             fromAddress = config.fromAddress;
             notifyUsersARN = config.devNotifyUsersARN;
             linkRoot = config.devLinkRoot;
+            childcareEmails = config.childcareEmailsDev;
+            tauscherEmails = config.tauscherEmailsDev;
+            mcalpinEmails = config.mcalpinEmailsDev;
+            feedbackEmails = config.feedbackEmailsDev;
         }
         
         console.log(config);
@@ -154,7 +170,7 @@ exports.handler = function (params, context) {
                     yield processEmergencyNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'feedback') {
-                    yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
+                    yield processFeedbackNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null, feedbackEmails);
                 }
                 else if (params.type === 'eventCreate') {
                     var template = yield getS3Object(templateBucket, templateName);
@@ -164,16 +180,16 @@ exports.handler = function (params, context) {
                     }
                 }
                 else if (params.type === 'childcare') {
-                    yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
+                    yield processChildcareNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null, childcareEmails);
                 }
                 else if (params.type === 'notifyPromotion') {
                     yield processPromotionNotification(fromAddress, stage, linkRoot, notifyUsersARN, params, templateBucket, templateName);
                 }
                 else if (params.type === 'mcalpin') {
-                    yield processMcAlpinNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
+                    yield processMcAlpinNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null, mcalpinEmails);
                 }
                 else if (params.type === 'tauscher') {
-                    yield processTauscherNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null);
+                    yield processTauscherNotification(db, fromAddress, params.title, params.description, params.sentBy, params.image, null, tauscherEmails);
                 }
                 context.succeed({});
             }).catch(onerror);
@@ -287,13 +303,13 @@ function formatRange(start, end, fmt) {
     return from + ' - ' + to;
 }
 
-function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template) {
+function processFeedbackNotification(db, fromAddress, title, description, sentBy, image, template, feedbackEmails) {
     return co(function*() {
         if (config.verbose) {
             console.log('processFeedbackNotification');
         }
-        for (var i = 0; i < config.feedbackEmails.length; i++) {
-            var destEmail = config.feedbackEmails[i];
+        for (var i = 0; i < feedbackEmails.length; i++) {
+            var destEmail = feedbackEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);
@@ -351,31 +367,31 @@ function processEventCreateNotification(db, params, fromAddress, template) {
     }).catch(onerror);
 };
 
-function processChildcareNotification(db, fromAddress, title, description, sentBy, image, template) {
+function processChildcareNotification(db, fromAddress, title, description, sentBy, image, template, childcareEmails) {
     return co(function*() {
         if (config.verbose) {
             console.log('processChildNotification');
         }
-        for (var i = 0; i < config.childcareEmails.length; i++) {
-            var destEmail = config.feedbackEmails[i];
+        for (var i = 0; i < childcareEmails.length; i++) {
+            var destEmail = childcareEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);
 };
 
-function processMcAlpinNotification(db, fromAddress, title, description, sentBy, image, template) {
+function processMcAlpinNotification(db, fromAddress, title, description, sentBy, image, template, mcalpinEmails) {
     return co(function*() {
         if (config.verbose) {
             console.log('processMcAlpinNotification');
         }
-        for (var i = 0; i < config.mcalpinEmails.length; i++) {
-            var destEmail = config.mcalpinEmails[i];
+        for (var i = 0; i < mcalpinEmails.length; i++) {
+            var destEmail = mcalpinEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);
 };
 
-function processTauscherNotification(db, fromAddress, title, description, sentBy, image, template) {
+function processTauscherNotification(db, fromAddress, title, description, sentBy, image, template, tauscherEmails) {
     return co(function*() {
         if (config.verbose) {
             console.log('processTauscherNotification');
@@ -388,8 +404,8 @@ function processTauscherNotification(db, fromAddress, title, description, sentBy
                 'template': template
             });
         }
-        for (var i = 0; i < config.tauscherEmails.length; i++) {
-            var destEmail = config.tauscherEmails[i];
+        for (var i = 0; i < tauscherEmails.length; i++) {
+            var destEmail = tauscherEmails[i];
             yield sendEmail(fromAddress, destEmail, title, null, description, null);
         }
     }).catch(onerror);

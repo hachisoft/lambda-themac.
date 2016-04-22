@@ -85,7 +85,7 @@ exports.handler = function (params, context) {
                     if (params.provisioned) {
                         var _sendingUser = db.child("users/" + params.provisioned);
                         var sendingUser = yield _sendingUser.get();
-                        if (sendingUser) {
+                        if (sendingUser && isAdmin(sendingUser)) {
                             params.admin = sendingUser.memberNumber;
                             params.adminName = sendingUser.firstName + ' ' + sendingUser.lastName;
                         }
@@ -2401,6 +2401,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
                             }
                         }
                         var sessionDetail = {
+                            sessionDate: session.date,
                             date: formatTime(session.date, 'MMMM D'),
                             startTime: formatTime(session.date, 'h:mm a'),
                             endTime: formatTime(session.date + (session.duration * 60000), 'h:mm a'),
@@ -2424,6 +2425,9 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         }
            
         if (sessions && sessions.length) {
+            sessions.sort(function (a, b) {
+                return a.sessionDate - b.sessionDate;
+            });
             confirmationNotificationDescription = addLine(confirmationNotificationDescription, "<strong>Sessions</strong>");
             for (var i = 0; i < sessions.length; i++) {
                 var s = sessions[i];

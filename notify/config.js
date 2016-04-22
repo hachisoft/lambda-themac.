@@ -22,20 +22,32 @@ var config = {
     "devS3Secret": 'Hn/MqHv7XxHcTv5p5MngKwzk1CwnbkFICN670rz7',
     "prod2S3Secret": 'qk46uq70LwWjmkajun5e1fMcpF4OJnd0vryesoVB',
     "verbose": true,
+    "feedbackEmailsDev": [
+        'msdedwards@hachisoft.com',
+    ],
+    "childcareEmailsDev": [
+        'cedwards@hachisoft.com',
+    ],
+    "tauscherEmailsDev": [
+        'msdedwards@hachisoft.com',
+    ],
+    "mcalpinEmailsDev": [
+        'msdedwards@hachisoft.com',
+    ],
     "feedbackEmails": [
         'msdedwards@hachisoft.com',
         'czoucha@themac.com'
     ],
     "childcareEmails": [
-        'msdedwards@hachisoft.com',
-        'czoucha@themac.com'
+        'childcare@themac.com',
+        'webmaster@themac.com'
     ],
     "tauscherEmails": [
-        'msdedwards@hachisoft.com',
-        'czoucha@themac.com'
+        'czoucha@themac.com',
+        'ngreider@themac.com'
     ],
     "mcalpinEmails": [
-        'msdedwards@hachisoft.com',
+        'adenuyl@themac.com',
         'czoucha@themac.com'
     ],
     "eventCreationNotifications": [
