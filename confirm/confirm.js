@@ -750,10 +750,30 @@ function processRegistrationCancellation(errors, params, verb, cancellingUser_id
             if (_confirmation)
                 confirmation = yield _confirmation.get();
             
+            var registrationCount = 0;
+            var waitlistCount = 0;
+            var _userRegistrationsForEvent = db.child("registrations/").orderByChild('event').equalTo(registration.event);
+            var _urfe = yield _userRegistrationsForEvent.get();
+            if (_urfe) {
+                var urfeKeys = Object.keys(_urfe);
+                for (var w = 0; w < urfeKeys.length; w++) {
+                    var key = urfeKeys[w];
+                    
+                    var registrationStatus = _urfe[key].status;
+                    //Billed, Cancelled, Pending, Wishlist, Reserved, Finalized
+                    if (registrationStatus === 'Billed' || registrationStatus === 'Reserved' || registrationStatus === 'Finalized') {
+                        registrationCount++;
+                    }
+                    if (registrationStatus==='Pending' && _urfe[key].isOnWaitlist) {
+                        waitlistCount++;
+                    }
+                }
+            }
+            
             var registeringUser = yield _registeringUser.get();
             var fee = yield _fee.get();
             if (validateCancellation(errors, params, db, cancellingUser, registration, event, fee)) {
-                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee, registrationCount, waitlistCount);
                 if (event && verb !=='Dismiss') {
                     if (event.sendMemberNotifications) {
                         yield processConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, templateBucket, fromAddress);
@@ -770,7 +790,7 @@ function processRegistrationCancellation(errors, params, verb, cancellingUser_id
                 }
             }
             else {
-                yield updateRegistration(errors, params, 'Error-Cancel', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, 'Error-Cancel', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee, registrationCount, waitlistCount);
             }
         }
     }).catch(function (err) {
@@ -1176,19 +1196,41 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                 _provisionedUser = db.child('users/' + params.provisioned);
                 provisionedUser = yield _provisionedUser.get();
             }
+            
+            var registrationCount = 0;
+            var waitlistCount = 0;
+            var _userRegistrationsForEvent = db.child("registrations/").orderByChild('event').equalTo(registration.event);
+            var _urfe = yield _userRegistrationsForEvent.get();
+            if (_urfe) {
+                var urfeKeys = Object.keys(_urfe);
+                for (var w = 0; w < urfeKeys.length; w++) {
+                    var key = urfeKeys[w];
+                    
+                    var registrationStatus = _urfe[key].status;
+                    //Billed, Cancelled, Pending, Wishlist, Reserved, Finalized
+                    if (registrationStatus === 'Billed' || registrationStatus === 'Reserved' || registrationStatus === 'Finalized') {
+                        registrationCount++;
+                    }
 
-            if (validateRegistration(errors, params, db, registeredUser, registeringUser, provisionedUser, registration, event)) {
+                    if (registrationStatus === 'Pending' && _urfe[key].isOnWaitlist) {
+                        waitlistCount++;
+                    }
+                }
+            }
+
+            if (validateRegistration(errors, params, db, registeredUser, registeringUser, provisionedUser, registration, event, registrationCount, waitlistCount)) {
                 registration.status = "Reserved";
                 registration.dateRegistered = moment().valueOf();
                 if (!event.noRegistrationRequired) {
-                    if (event.available > 0) {
+                    var available = event.capacity - registrationCount;
+                    if (available > 0) {
                         var _eventAvailable = db.child('events/' + registration.event + '/available');
-                        yield _eventAvailable.transaction(function (available) {
-                            if (available === null) {
+                        yield _eventAvailable.transaction(function (_available) {
+                            if (_available === null) {
                                 return event.capacity;
                             }
                             else {
-                                return available - 1;
+                                return available-1;
                             }
                         });
                     }
@@ -1205,7 +1247,7 @@ function processRegistration(errors, params, verb, db, context, registration_id,
                         }
                     }
                 }
-                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee, registrationCount, waitlistCount);
                 if (!event.noRegistrationRequired) { //no registration required means no confirmation required
                     if (event.sendMemberNotifications) {
                         yield processConfirmation(errors, params, verb, db, registeringUser, registration.registeringUser, registeredUser, registration.registeredUser, event, registration.event, registration, null, null, confirmation, null, templateBucket, fromAddress);
@@ -1222,7 +1264,7 @@ function processRegistration(errors, params, verb, db, context, registration_id,
             }
             else {
                 registration.status = 'Error';
-                yield updateRegistration(errors, params, 'Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee);
+                yield updateRegistration(errors, params, 'Error-Register', db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee, registrationCount, waitlistCount);
             }
         }
     }).catch(function (err) {
@@ -1564,7 +1606,7 @@ function isAdmin(user)
     return false;
 }
 
-function validateRegistration(errors, params, db, user, registeringUser, provisionedUser, registration, event) {
+function validateRegistration(errors, params, db, user, registeringUser, provisionedUser, registration, event, registrationCount, waitlistCount) {
     if (!event)
         return false;
     if (!registration)
@@ -1612,13 +1654,13 @@ function validateRegistration(errors, params, db, user, registeringUser, provisi
     if (registration.status === 'Reserved') { //already reserved?
         return false;
     }
-    var valid = validateEventRegistrationRules(errors, user, registeringUser, registration, event);
+    var valid = validateEventRegistrationRules(errors, user, registeringUser, registration, event, registrationCount, waitlistCount);
     if (event.restrictOnError)
         return valid;
     return true;
 }
 
-function validateEventRegistrationRules(errors, user, registeringUser, registration, event) {
+function validateEventRegistrationRules(errors, user, registeringUser, registration, event, registrationCount, waitlistCount) {
     var dob = null;
 
     if (user) {
@@ -1674,11 +1716,23 @@ function validateEventRegistrationRules(errors, user, registeringUser, registrat
     }
 
     if (!event.allowWaitlist) {
-        if (event.available < 1) {
+        if (!event.capacity) {
+            registration.validationError = 'Event has an unspecified capacity';
+            AddError(errors, registration.validationError);
+            return false;
+        }
+        var available = event.capacity - registrationCount;
+        if (available < 1) {
             registration.validationError = 'Event does not allow waitlisting, and no has no available capacity';
             AddError(errors,registration.validationError);
             return false;
         }
+    }
+    else if (waitlistCount) //allows waitlist and we have some... no more reservations till thats cleaned up
+    {
+        registration.validationError = 'Event is in waitlist status';
+        AddError(errors, registration.validationError);
+        return false;
     }
     
     if (event.registrationOpen) {
@@ -1714,7 +1768,7 @@ function getFirebasePath(root, path)
     return path.replace(root, '');
 }
 
-function updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee) {
+function updateRegistration(errors, params, verb, db, registration_id, _registration, registration, _event, event, _registeredUser, registeredUser, _registeringUser, registeringUser, _fee, fee, registrationCount, waitlistCount) {
     if (config.verbose) {
         console.log('updateRegistration:'+verb);
     }
@@ -1738,10 +1792,26 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
 
         if (verb === 'Cancel' || verb ==='Dismiss' || verb === 'CancelEvent') {
             if (registration) {
-                if (!event.noRegistrationRequired && registration.status === 'Reserved') {
+                if (!event.noRegistrationRequired) {
+                    var available = event.capacity - registrationCount;
                     var _eventAvailable = db.child('events/' + registration.event + '/available');
-                    yield _eventAvailable.transaction(function (available) {
-                        return available + 1;
+                    yield _eventAvailable.transaction(function (_available) {
+                        if (registration.status === 'Reserved') {
+                            if (waitlistCount) {
+                                return 0;
+                            }
+                            //no waitlist... add this back to the pool
+                            return available + 1;
+                        }
+                        else if (registration.isOnWaitlist && waitlistCount===1) { //last waitlister... return to the "actual" available
+                            return available;
+                        }
+                        else if (_available === null) {
+                            return event.capacity;
+                        }
+                        else {
+                            return _available;
+                        }
                     });
                 }
                 
@@ -1881,6 +1951,7 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
                     promises.push(_cancelledRegistrations.push(cancelledRegistration));
                 }
             }
+            promises.push(db.update(atomicWrite));
         }
         else if (verb === 'Register' || verb === 'RegisterForce' || verb === 'Waitlist' || verb === 'Error-Cancel' || verb === 'Error-Register') {
 
@@ -1914,7 +1985,6 @@ function updateRegistration(errors, params, verb, db, registration_id, _registra
             promises.push(_registration.set(registration));
         }
         promises.push(_auditRegistrations.push(auditEntry));
-        promises.push(db.update(atomicWrite));
         yield promises;
     }).catch(function (err) {
         console.log(err);  
