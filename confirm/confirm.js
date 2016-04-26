@@ -2051,6 +2051,10 @@ function sendConfirmation(errors, params, verb, db, user, user_id, details, from
                         user: user_id
                     };
                     
+                    if (details.expiration) {
+                        notification.expiration = details.expiration;
+                    }
+                    
                     if (details.linkTo && details.identifier) {
                         notification.linkTo = details.linkTo;
                         notification.identifier = details.identifier;
@@ -2382,6 +2386,7 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         var reservationDate = '';
         var reservationStartTime = '';
         var reservationAsset = null;
+        var expiration = null;
         var linkTo = null;
         var identifier = null;
         var sessions = [];
@@ -2438,9 +2443,17 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             }
             if (event.sessions) {
                 for (var propertyName in event.sessions) {
+                    
                     var _c = db.child('sessions/' + propertyName);
                     var session = yield _c.get();
                     if (session) {
+                        var sessionEndDate = moment(session.date + (session.duration * 60000)).valueOf();
+                        if (!expiration) {
+                            expiration = sessionEndDate;
+                        }
+                        else if (expiration < sessionEndDate){
+                            expiration = sessionEndDate;
+                        }
                         var sessionLocationName = '';
                         if (session.location) {
                             locations.push(session.location)
@@ -2559,7 +2572,13 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
             var _c = db.child('sessions/' + reservation.session);
             var session = yield _c.get();
             if (session) {
-                
+                var sessionEndDate = moment(session.date + (session.duration * 60000)).valueOf();
+                if (!expiration) {
+                    expiration = sessionEndDate;
+                }
+                else if (expiration < sessionEndDate){
+                    expiration = sessionEndDate;
+                }
                 if (cal) {
                     
                     cal.setName(eventName);
@@ -2643,6 +2662,10 @@ function buildConfirmation(errors, params, verb, db, user, user_id, event, event
         
         if (identifier) {
             details.identifier = identifier;
+        }
+        
+        if (expiration) {
+            details.expiration = expiration;
         }
         
         if (reservationAsset) {
