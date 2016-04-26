@@ -34,6 +34,6 @@ var config = {
     "devBulkARN": "arn:aws:sns:us-west-2:172166497234:bulk_email",
     "prod2BulkARN": "arn:aws:sns:us-west-2:907623002484:bulk_email",
     "prodBulkARN": "arn:aws:sns:us-west-2:907623002484:bulk_email",
-    "production": false
+    "production": true
 }
 module.exports = config

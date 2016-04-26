@@ -35,6 +35,6 @@ var config = {
     "prodBulkARN": "arn:aws:sns:us-west-2:907623002484:bulk_email",
     "devLinkRoot": "http://localhost:4200",
     "prod2LinkRoot": "https://macdata-2.firebaseapp.com",
-    "prodLinkRoot": "https://sizzling-inferno-283.firebaseapp.com"
+    "prodLinkRoot": "https://www.themac.com"
 }
 module.exports = config
